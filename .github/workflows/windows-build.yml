@@ -1,0 +1,44 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    name: Build Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained Windows app
+        run: >-
+          dotnet publish GalaxyWearable.Windows/GalaxyWearable.Windows.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output publish/win-x64
+          -p:Platform=x64
+          -p:WindowsPackageType=None
+          -p:EnableMsixTooling=false
+          -p:WindowsAppSDKSelfContained=true
+
+      - name: Upload Windows x64 build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Galaxy-Wearable-Windows-win-x64
+          path: publish/win-x64/
+          if-no-files-found: error
+          retention-days: 14

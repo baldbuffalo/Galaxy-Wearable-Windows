@@ -8,14 +8,14 @@ A native Windows companion app exploring Bluetooth connectivity and interoperabi
 
 - Native Windows 10/11 desktop experience, built with C# and WinUI 3.
 - Modular device and capability architecture so support can expand without copying Samsung's screen-by-screen UI.
-- Discover nearby Bluetooth LE devices and inspect basic advertisement information.
+- Discover nearby Bluetooth LE devices, connect to a selected device, and inspect advertised GATT services.
 - Build toward stable connection and automatic reconnection.
 - Investigate documented and publicly researched Fit3 services before implementing device-specific communication.
 - Clearly distinguish tested features from experimental or unavailable features.
 
 ## Current milestone
 
-The initial app shell provides Bluetooth LE advertisement discovery. The project goal is to investigate and implement a full companion-pairing flow for Windows, starting with Galaxy Fit3. Official-companion pairing, health-data access, and firmware updates are not implemented or verified yet.
+The initial app shell provides Bluetooth LE advertisement discovery and a read-only GATT service inspector. The project goal is to investigate and implement a full companion-pairing flow for Windows, starting with Galaxy Fit3. Official-companion pairing, health-data access, and firmware updates are not implemented or verified yet.
 
 ## Requirements
 

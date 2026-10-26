@@ -11,7 +11,7 @@ Understand the Fit3's publicly observable Bluetooth behavior and determine which
 - [ ] Record advertised local name, address, connectability, signal strength, and manufacturer/service data where available.
 - [ ] Inspect GATT services only after a user explicitly selects a device and Windows grants access.
 - [ ] Compare findings with public, documented research and open-source implementations.
-- [ ] Determine whether companion pairing requires a Samsung-specific handshake or phone-mediated setup.
+- [ ] Determine the complete pairing sequence, including pairing confirmation and any companion-specific protocol.
 - [ ] Implement reconnect behavior only after a supported connection flow is known.
 
 ## Important distinctions

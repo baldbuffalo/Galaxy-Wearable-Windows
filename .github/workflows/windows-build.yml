@@ -24,17 +24,23 @@ jobs:
           dotnet-version: 11.0.100-rc.3.26522.148
           dotnet-quality: preview
 
+      - name: Set up Visual Studio MSBuild
+        uses: microsoft/setup-msbuild@v2
+
       - name: Publish self-contained Windows app
+        shell: pwsh
         run: >-
-          dotnet publish GalaxyWearable.Windows/GalaxyWearable.Windows.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained true
-          --output publish/win-x64
-          -p:Platform=x64
-          -p:WindowsPackageType=None
-          -p:EnableMsixTooling=false
-          -p:WindowsAppSDKSelfContained=true
+          msbuild GalaxyWearable.Windows/GalaxyWearable.Windows.csproj
+          /restore
+          /target:Publish
+          /property:Configuration=Release
+          /property:RuntimeIdentifier=win-x64
+          /property:SelfContained=true
+          /property:PublishDir=publish/win-x64/
+          /property:Platform=x64
+          /property:WindowsPackageType=None
+          /property:EnableMsixTooling=false
+          /property:WindowsAppSDKSelfContained=true
 
       - name: Upload Windows x64 build
         uses: actions/upload-artifact@v4

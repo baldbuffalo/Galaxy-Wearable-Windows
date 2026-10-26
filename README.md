@@ -15,7 +15,7 @@ A native Windows companion app exploring Bluetooth connectivity and interoperabi
 
 ## Current milestone
 
-The initial app shell provides a device discovery view and a service layer for Bluetooth LE advertisements. It does **not** yet claim to pair as the official Galaxy Wearable companion, read all health data, or support firmware updates.
+The initial app shell provides Bluetooth LE advertisement discovery. The project goal is to investigate and implement a full companion-pairing flow for Windows, starting with Galaxy Fit3. Official-companion pairing, health-data access, and firmware updates are not implemented or verified yet.
 
 ## Requirements
 

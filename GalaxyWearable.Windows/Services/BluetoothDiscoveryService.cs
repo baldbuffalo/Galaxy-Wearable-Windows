@@ -28,8 +28,8 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
     public void Start()
     {
-        if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Started
-            or BluetoothLEAdvertisementWatcherStatus.Created)
+        if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Created
+            or BluetoothLEAdvertisementWatcherStatus.Stopped)
         {
             _watcher.Start();
         }

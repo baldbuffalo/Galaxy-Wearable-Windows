@@ -19,13 +19,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up .NET 11 RC3 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: 11.0.100-rc.3.26522.148
           dotnet-quality: preview
 
       - name: Set up Visual Studio MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Publish self-contained Windows app
         shell: pwsh
@@ -43,7 +43,7 @@ jobs:
           /property:WindowsAppSDKSelfContained=true
 
       - name: Upload Windows x64 build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: Galaxy-Wearable-Windows-win-x64
           path: publish/win-x64/

@@ -5,12 +5,20 @@ using GalaxyWearable.Windows.Models;
 namespace GalaxyWearable.Windows.Services;
 
 /// <summary>
-/// Bluetooth LE discovery filtered to advertisements identifying as a Galaxy Fit3.
+/// Bluetooth LE discovery filtered to advertisements with Samsung Galaxy wearable names.
 /// This does not pair with a device or implement Samsung's companion protocol.
 /// </summary>
 public sealed class BluetoothDiscoveryService : IDisposable
 {
-    private const string TargetDeviceName = "Galaxy Fit3";
+    private static readonly string[] SamsungWearableNameMarkers =
+    [
+        "Galaxy Watch",
+        "Galaxy Fit",
+        "Gear S",
+        "Gear Fit",
+        "Gear Sport",
+        "Galaxy Gear"
+    ];
 
     private readonly BluetoothLEAdvertisementWatcher _watcher = new()
     {
@@ -46,11 +54,12 @@ public sealed class BluetoothDiscoveryService : IDisposable
         BluetoothLEAdvertisementWatcher sender,
         BluetoothLEAdvertisementReceivedEventArgs args)
     {
-        // Ignore unrelated Bluetooth devices. Only list advertisements whose
-        // advertised name identifies the target Galaxy Fit3.
+        // Only display advertisements whose local name matches a known Samsung
+        // Galaxy Watch/Fit or Gear wearable naming family.
         var name = args.Advertisement.LocalName;
         if (string.IsNullOrWhiteSpace(name)
-            || !name.Contains(TargetDeviceName, StringComparison.OrdinalIgnoreCase))
+            || !SamsungWearableNameMarkers.Any(marker =>
+                name.Contains(marker, StringComparison.OrdinalIgnoreCase)))
         {
             return;
         }

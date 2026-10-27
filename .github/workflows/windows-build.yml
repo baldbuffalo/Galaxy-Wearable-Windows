@@ -42,7 +42,7 @@ jobs:
           /property:WindowsAppSDKSelfContained=true
 
       - name: Upload Windows x64 build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: Galaxy-Wearable-Windows-win-x64
           path: GalaxyWearable.Windows/publish/win-x64/

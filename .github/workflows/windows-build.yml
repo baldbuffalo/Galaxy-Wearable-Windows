@@ -43,6 +43,9 @@ jobs:
           /property:WindowsPackageType=None
           /property:EnableMsixTooling=true
           /property:WindowsAppSDKSelfContained=true
+          /property:PublishTrimmed=false
+          /property:PublishAot=false
+          /property:PublishReadyToRun=false
 
       - name: Verify single-EXE publish
         shell: pwsh

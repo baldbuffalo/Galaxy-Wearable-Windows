@@ -2,7 +2,7 @@ using GalaxyWearable.Windows.Models;
 using GalaxyWearable.Windows.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Windows.Devices.Radios;
+using global::Windows.Devices.Radios;
 
 namespace GalaxyWearable.Windows;
 

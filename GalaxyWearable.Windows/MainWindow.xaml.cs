@@ -9,6 +9,7 @@ namespace GalaxyWearable.Windows;
 public sealed partial class MainWindow : Window
 {
     private readonly BluetoothDiscoveryService _discovery = new();
+    private readonly BluetoothConnectionService _connection = new();
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly Dictionary<string, WearableDevice> _devices = new();
 
@@ -17,7 +18,12 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
-        Closed += (_, _) => _discovery.Dispose();
+        _connection.HeartRateChanged += Connection_HeartRateChanged;
+        Closed += (_, _) =>
+        {
+            _discovery.Dispose();
+            _connection.Dispose();
+        };
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
@@ -40,15 +46,13 @@ public sealed partial class MainWindow : Window
 
             if (bluetoothRadio is not null && bluetoothRadio.State != RadioState.On)
             {
-                // Try to enable Bluetooth automatically. Windows may deny this for
-                // unpackaged desktop apps or radios that do not allow programmatic control.
                 try
                 {
                     await bluetoothRadio.SetStateAsync(RadioState.On);
                 }
                 catch
                 {
-                    // Continue below; do not interrupt the user's scan action.
+                    // Windows may block programmatic radio changes for unpackaged desktop apps.
                 }
 
                 radios = await Radio.GetRadiosAsync();
@@ -67,7 +71,7 @@ public sealed partial class MainWindow : Window
             if (_discovery.IsScanning)
             {
                 ScanButton.Content = "Stop scanning";
-                DiscoveryHint.Text = "Scanning nearby Bluetooth LE devices…";
+                DiscoveryHint.Text = "Scanning nearby Bluetooth LE advertisements. Select a device to connect.";
             }
             else
             {
@@ -86,6 +90,73 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void ConnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_connection.IsConnected)
+        {
+            ConnectButton.IsEnabled = false;
+            try
+            {
+                await _connection.DisconnectAsync();
+                ConnectButton.Content = "Connect selected";
+                ConnectionHint.Text = "BLE connection closed.";
+                GattDetails.Text = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                ConnectionHint.Text = $"Disconnect issue: {ex.Message}";
+            }
+            finally
+            {
+                ConnectButton.IsEnabled = true;
+            }
+            return;
+        }
+
+        if (DevicesList.SelectedItem is not WearableDevice selected)
+        {
+            ConnectionHint.Text = "Select your Galaxy Fit3 or another detected watch first.";
+            return;
+        }
+
+        ConnectButton.IsEnabled = false;
+        ConnectionHint.Text = $"Connecting to {selected.Name} and discovering GATT services…";
+        GattDetails.Text = string.Empty;
+
+        try
+        {
+            GattDetails.Text = await _connection.ConnectAndInspectAsync(selected.Id);
+            ConnectButton.Content = "Disconnect";
+            ConnectionHint.Text = "BLE connected. Samsung companion pairing is not yet established.";
+        }
+        catch (Exception ex)
+        {
+            ConnectionHint.Text = $"Could not connect: {ex.Message}";
+            ConnectButton.Content = "Connect selected";
+        }
+        finally
+        {
+            ConnectButton.IsEnabled = true;
+        }
+    }
+
+    private async void HeartRateButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ConnectionHint.Text = await _connection.StartHeartRateNotificationsAsync();
+        }
+        catch (Exception ex)
+        {
+            ConnectionHint.Text = $"Heart-rate subscription failed: {ex.Message}";
+        }
+    }
+
+    private void Connection_HeartRateChanged(object? sender, string message)
+    {
+        _dispatcherQueue.TryEnqueue(() => ConnectionHint.Text = message);
+    }
+
     private void Discovery_DevicesChanged(object? sender, IReadOnlyList<WearableDevice> devices)
     {
         _dispatcherQueue.TryEnqueue(() =>
@@ -93,11 +164,13 @@ public sealed partial class MainWindow : Window
             foreach (var device in devices)
                 _devices[device.Id] = device;
 
-            DevicesList.ItemsSource = _devices.Values
-                .OrderByDescending(device => device.LastSeen)
-                .ToArray();
+            var selectedId = (DevicesList.SelectedItem as WearableDevice)?.Id;
+            var items = _devices.Values.OrderByDescending(device => device.LastSeen).ToArray();
+            DevicesList.ItemsSource = items;
+            if (selectedId is not null)
+                DevicesList.SelectedItem = items.FirstOrDefault(device => device.Id == selectedId);
 
-            DiscoveryHint.Text = $"Found {_devices.Count} device(s). This scan does not pair or authenticate.";
+            DiscoveryHint.Text = $"Found {_devices.Count} likely Samsung wearable(s). Select one to connect.";
         });
     }
 }

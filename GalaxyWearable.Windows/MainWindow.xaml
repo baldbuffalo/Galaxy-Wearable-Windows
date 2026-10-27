@@ -12,7 +12,7 @@
         <Border Padding="24,20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
             <StackPanel Spacing="6">
                 <TextBlock Text="Galaxy Wearable" FontSize="28" FontWeight="SemiBold" />
-                <TextBlock Text="Windows companion · Galaxy Fit3 research build" Opacity="0.72" />
+                <TextBlock Text="Windows companion · Samsung Galaxy watches and bands" Opacity="0.72" />
             </StackPanel>
         </Border>
         <Grid Grid.Row="1" Padding="24" RowSpacing="16">
@@ -27,7 +27,7 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Nearby Bluetooth devices" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock x:Name="DiscoveryHint" Text="Start scanning to discover nearby Bluetooth LE advertisements." Opacity="0.72" TextWrapping="Wrap" />
+                    <TextBlock x:Name="DiscoveryHint" Text="Start scanning to discover nearby Samsung wearables." Opacity="0.72" TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Button x:Name="ScanButton" Content="Start scanning" Click="ScanButton_Click" />
@@ -57,10 +57,10 @@
         </Grid>
         <Border Grid.Row="2" Padding="16,10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
             <StackPanel Spacing="8">
-                <TextBlock x:Name="ConnectionHint" Text="Select a discovered device, then connect to inspect its GATT services." TextWrapping="Wrap" />
+                <TextBlock x:Name="ConnectionHint" Text="Select a discovered Samsung wearable, then connect to inspect available GATT services." TextWrapping="Wrap" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button x:Name="HeartRateButton" Content="Enable heart-rate notifications" Click="HeartRateButton_Click" />
-                    <TextBlock Text="Standard BLE feature only; not full Samsung phone pairing." VerticalAlignment="Center" Opacity="0.72" TextWrapping="Wrap" />
+                    <TextBlock Text="Works only when a device exposes the standard BLE heart-rate service; not full Samsung phone pairing." VerticalAlignment="Center" Opacity="0.72" TextWrapping="Wrap" />
                 </StackPanel>
                 <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
                     <TextBlock x:Name="GattDetails" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />

@@ -37,11 +37,25 @@ jobs:
           /property:SelfContained=true
           /property:PublishSingleFile=true
           /property:IncludeAllContentForSelfExtract=true
+          /property:IncludeNativeLibrariesForSelfExtract=true
           /property:PublishDir=../dist/GalaxyWearable-Windows/win-x64/
           /property:Platform=x64
           /property:WindowsPackageType=None
           /property:EnableMsixTooling=true
           /property:WindowsAppSDKSelfContained=true
+
+      - name: Verify single-EXE publish
+        shell: pwsh
+        run: |
+          $publishedApp = "dist/GalaxyWearable-Windows/win-x64/GalaxyWearable.Windows.exe"
+          if (!(Test-Path $publishedApp)) {
+            throw "Published app not found at $publishedApp"
+          }
+          $looseDlls = Get-ChildItem "dist/GalaxyWearable-Windows/win-x64" -Filter "*.dll" -File
+          if ($looseDlls.Count -gt 0) {
+            $names = ($looseDlls | ForEach-Object { $_.Name }) -join ", "
+            throw "Single-file publish left external DLLs: $names"
+          }
 
       - name: Prepare single downloadable EXE
         shell: pwsh

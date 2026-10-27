@@ -1,16 +1,17 @@
 using System.Collections.Concurrent;
-using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using GalaxyWearable.Windows.Models;
 
 namespace GalaxyWearable.Windows.Services;
 
 /// <summary>
-/// Read-only Bluetooth LE advertisement discovery. This does not pair with a device
-/// or implement Samsung's companion protocol.
+/// Bluetooth LE discovery filtered to advertisements identifying as a Galaxy Fit3.
+/// This does not pair with a device or implement Samsung's companion protocol.
 /// </summary>
 public sealed class BluetoothDiscoveryService : IDisposable
 {
+    private const string TargetDeviceName = "Galaxy Fit3";
+
     private readonly BluetoothLEAdvertisementWatcher _watcher = new()
     {
         ScanningMode = BluetoothLEScanningMode.Active
@@ -45,9 +46,14 @@ public sealed class BluetoothDiscoveryService : IDisposable
         BluetoothLEAdvertisementWatcher sender,
         BluetoothLEAdvertisementReceivedEventArgs args)
     {
-        var name = string.IsNullOrWhiteSpace(args.Advertisement.LocalName)
-            ? $"Bluetooth device {args.BluetoothAddress:X12}"
-            : args.Advertisement.LocalName;
+        // Ignore unrelated Bluetooth devices. Only list advertisements whose
+        // advertised name identifies the target Galaxy Fit3.
+        var name = args.Advertisement.LocalName;
+        if (string.IsNullOrWhiteSpace(name)
+            || !name.Contains(TargetDeviceName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
 
         _devices[args.BluetoothAddress] = new WearableDevice(
             name,

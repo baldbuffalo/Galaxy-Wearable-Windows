@@ -1,6 +1,6 @@
-using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeProfile;
-using Windows.Devices.Enumeration;
+using global::Windows.Devices.Bluetooth;
+using global::Windows.Devices.Bluetooth.GenericAttributeProfile;
+using global::Windows.Devices.Enumeration;
 using GalaxyWearable.Windows.Models;
 
 namespace GalaxyWearable.Windows.Services;

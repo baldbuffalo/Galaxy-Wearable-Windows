@@ -45,6 +45,6 @@ jobs:
         uses: actions/upload-artifact@v7.0.2
         with:
           name: Galaxy-Wearable-Windows-win-x64
-          path: GalaxyWearable.Windows/publish/win-x64/
+          path: GalaxyWearable.Windows/GalaxyWearable.Windows/publish/win-x64/
           if-no-files-found: error
           retention-days: 14

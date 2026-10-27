@@ -2,6 +2,8 @@ using GalaxyWearable.Windows.Models;
 using GalaxyWearable.Windows.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Windows.Devices.Radios;
+using Windows.System;
 
 namespace GalaxyWearable.Windows;
 
@@ -19,26 +21,53 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => _discovery.Dispose();
     }
 
-    private void ScanButton_Click(object sender, RoutedEventArgs e)
+    private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
         if (_discovery.IsScanning)
         {
             _discovery.Stop();
             ScanButton.Content = "Start scanning";
             DiscoveryHint.Text = "Scanning stopped. Previously discovered devices remain listed.";
+            return;
         }
-        else
+
+        try
         {
-            try
+            var radios = await Radio.GetRadiosAsync();
+            var bluetoothRadio = radios.FirstOrDefault(radio => radio.Kind == RadioKind.Bluetooth);
+
+            if (bluetoothRadio is null || bluetoothRadio.State != RadioState.On)
             {
-                _discovery.Start();
+                ScanButton.Content = "Start scanning";
+                DiscoveryHint.Text = "Bluetooth is turned off. Turn on Bluetooth in Windows Settings, then try scanning again. Opening Bluetooth settings…";
+                await Launcher.LaunchUriAsync(new Uri("ms-settings:bluetooth"));
+                return;
+            }
+
+            _discovery.Start();
+
+            if (_discovery.IsScanning)
+            {
                 ScanButton.Content = "Stop scanning";
-                DiscoveryHint.Text = "Scanning nearby Bluetooth LE advertisements…";
+                DiscoveryHint.Text = "Scanning nearby Bluetooth LE devices…";
             }
-            catch (Exception ex)
+            else
             {
-                DiscoveryHint.Text = $"Could not start scanning: {ex.Message}";
+                ScanButton.Content = "Start scanning";
+                DiscoveryHint.Text = "Windows could not start Bluetooth scanning. Check that Bluetooth is on and try again.";
             }
+        }
+        catch (Exception ex) when (ex.HResult == unchecked((int)0x800710DF)
+            || ex.HResult == unchecked((int)0x80070005))
+        {
+            ScanButton.Content = "Start scanning";
+            DiscoveryHint.Text = "Bluetooth is unavailable or Windows denied access. Turn on Bluetooth in Windows Settings and try again.";
+            await Launcher.LaunchUriAsync(new Uri("ms-settings:bluetooth"));
+        }
+        catch
+        {
+            ScanButton.Content = "Start scanning";
+            DiscoveryHint.Text = "Could not start Bluetooth scanning. Make sure Bluetooth is turned on in Windows Settings, then try again.";
         }
     }
 

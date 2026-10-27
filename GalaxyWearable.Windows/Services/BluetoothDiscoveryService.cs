@@ -52,6 +52,8 @@ public sealed class BluetoothDiscoveryService : IDisposable
         var hasSamsungManufacturerData = args.Advertisement.ManufacturerData
             .Any(data => data.CompanyId == SamsungCompanyId);
         var hasWatchAppearance = HasWatchAppearance(args.Advertisement);
+        var advertisesHeartRateService = args.Advertisement.ServiceUuids
+            .Any(uuid => uuid == Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceUuids.HeartRate);
 
         // Use generic advertised watch identity instead of enumerating Samsung models.
         // Standard watch appearance is the strongest model-independent signal.
@@ -63,7 +65,8 @@ public sealed class BluetoothDiscoveryService : IDisposable
                 || name.Contains("Fit", StringComparison.OrdinalIgnoreCase)
                 || name.Contains("Gear", StringComparison.OrdinalIgnoreCase));
 
-        if (!(hasSamsungManufacturerData && hasWatchAppearance) && !nameSuggestsSamsungWearable)
+        if (!(hasSamsungManufacturerData && (hasWatchAppearance || advertisesHeartRateService))
+            && !nameSuggestsSamsungWearable)
             return;
 
         var displayName = string.IsNullOrWhiteSpace(name)

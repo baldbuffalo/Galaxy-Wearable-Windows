@@ -5,20 +5,14 @@ using GalaxyWearable.Windows.Models;
 namespace GalaxyWearable.Windows.Services;
 
 /// <summary>
-/// Bluetooth LE discovery filtered to advertisements with Samsung Galaxy wearable names.
+/// Bluetooth LE discovery that identifies likely Samsung wearables from generic
+/// Samsung branding or Samsung manufacturer data, rather than specific watch models.
 /// This does not pair with a device or implement Samsung's companion protocol.
 /// </summary>
 public sealed class BluetoothDiscoveryService : IDisposable
 {
-    private static readonly string[] SamsungWearableNameMarkers =
-    [
-        "Galaxy Watch",
-        "Galaxy Fit",
-        "Gear S",
-        "Gear Fit",
-        "Gear Sport",
-        "Galaxy Gear"
-    ];
+    // Bluetooth SIG company identifier for Samsung Electronics.
+    private const ushort SamsungCompanyId = 0x0075;
 
     private readonly BluetoothLEAdvertisementWatcher _watcher = new()
     {
@@ -54,18 +48,26 @@ public sealed class BluetoothDiscoveryService : IDisposable
         BluetoothLEAdvertisementWatcher sender,
         BluetoothLEAdvertisementReceivedEventArgs args)
     {
-        // Only display advertisements whose local name matches a known Samsung
-        // Galaxy Watch/Fit or Gear wearable naming family.
-        var name = args.Advertisement.LocalName;
-        if (string.IsNullOrWhiteSpace(name)
-            || !SamsungWearableNameMarkers.Any(marker =>
-                name.Contains(marker, StringComparison.OrdinalIgnoreCase)))
-        {
+        var name = args.Advertisement.LocalName?.Trim() ?? string.Empty;
+        var hasSamsungManufacturerData = args.Advertisement.ManufacturerData
+            .Any(data => data.CompanyId == SamsungCompanyId);
+
+        // Do not maintain a list of watch models. Accept generic Samsung/Galaxy/Gear
+        // branding, or an advertisement explicitly carrying Samsung's company ID.
+        var hasSamsungBranding =
+            name.Contains("Samsung", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Galaxy", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Gear", StringComparison.OrdinalIgnoreCase);
+
+        if (!hasSamsungManufacturerData && !hasSamsungBranding)
             return;
-        }
+
+        var displayName = string.IsNullOrWhiteSpace(name)
+            ? "Samsung wearable"
+            : name;
 
         _devices[args.BluetoothAddress] = new WearableDevice(
-            name,
+            displayName,
             args.BluetoothAddress.ToString("X12"),
             FormatAddress(args.BluetoothAddress),
             args.RawSignalStrengthInDBm,

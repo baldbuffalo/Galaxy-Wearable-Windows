@@ -1,7 +1,7 @@
 using System.Globalization;
-using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeProfile;
-using Windows.Storage.Streams;
+using global::Windows.Devices.Bluetooth;
+using global::Windows.Devices.Bluetooth.GenericAttributeProfile;
+using global::Windows.Storage.Streams;
 
 namespace GalaxyWearable.Windows.Services;
 

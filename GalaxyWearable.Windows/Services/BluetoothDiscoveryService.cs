@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Windows.Devices.Bluetooth.Advertisement;
+using global::Windows.Devices.Bluetooth.Advertisement;
 using GalaxyWearable.Windows.Models;
 
 namespace GalaxyWearable.Windows.Services;
@@ -53,7 +53,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
             .Any(data => data.CompanyId == SamsungCompanyId);
         var hasWatchAppearance = HasWatchAppearance(args.Advertisement);
         var advertisesHeartRateService = args.Advertisement.ServiceUuids
-            .Any(uuid => uuid == Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceUuids.HeartRate);
+            .Any(uuid => uuid == global::Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceUuids.HeartRate);
 
         // Use generic advertised watch identity instead of enumerating Samsung models.
         // Standard watch appearance is the strongest model-independent signal.
@@ -92,7 +92,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
     {
         foreach (var section in advertisement.GetSectionsByType(AppearanceDataType))
         {
-            using var reader = Windows.Storage.Streams.DataReader.FromBuffer(section.Data);
+            using var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(section.Data);
             if (reader.UnconsumedBufferLength < 2)
                 continue;
 

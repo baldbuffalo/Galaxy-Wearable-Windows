@@ -38,7 +38,7 @@ jobs:
           /property:PublishDir=../dist/GalaxyWearable-Windows/win-x64/
           /property:Platform=x64
           /property:WindowsPackageType=None
-          /property:EnableMsixTooling=false
+          /property:EnableMsixTooling=true
           /property:WindowsAppSDKSelfContained=true
 
       - name: Package application files into launcher

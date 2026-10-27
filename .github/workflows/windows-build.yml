@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-windows-x64:
-    name: Build single-file Windows app
+    name: Build unpackaged Windows app
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -26,7 +26,7 @@ jobs:
       - name: Set up Visual Studio MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      - name: Publish self-contained single-file WinUI app
+      - name: Publish self-contained WinUI app (loose files)
         shell: pwsh
         run: >-
           msbuild GalaxyWearable.Windows/GalaxyWearable.Windows.csproj
@@ -35,7 +35,7 @@ jobs:
           /property:Configuration=Release
           /property:RuntimeIdentifier=win-x64
           /property:SelfContained=true
-          /property:PublishSingleFile=true
+          /property:PublishSingleFile=false
           /property:IncludeAllContentForSelfExtract=true
           /property:IncludeNativeLibrariesForSelfExtract=true
           /property:PublishDir=../dist/GalaxyWearable-Windows/win-x64/
@@ -47,39 +47,39 @@ jobs:
           /property:PublishAot=false
           /property:PublishReadyToRun=false
 
-      - name: Verify single-EXE publish
+      - name: Verify loose-file publish
         shell: pwsh
         run: |
-          $publishedApp = "dist/GalaxyWearable-Windows/win-x64/GalaxyWearable.Windows.exe"
+          $publishDir = "dist/GalaxyWearable-Windows/win-x64"
+          $publishedApp = Join-Path $publishDir "GalaxyWearable.Windows.exe"
           if (!(Test-Path $publishedApp)) {
             throw "Published app not found at $publishedApp"
           }
-          $looseDlls = Get-ChildItem "dist/GalaxyWearable-Windows/win-x64" -Filter "*.dll" -File
-          if ($looseDlls.Count -gt 0) {
-            $names = ($looseDlls | ForEach-Object { $_.Name }) -join ", "
-            throw "Single-file publish left external DLLs: $names"
+
+          $looseDlls = Get-ChildItem $publishDir -Filter "*.dll" -File
+          if ($looseDlls.Count -eq 0) {
+            throw "Expected supporting DLLs beside the executable, but none were found."
           }
 
-      - name: Prepare single downloadable EXE
+          $xamlDll = Get-ChildItem $publishDir -Filter "Microsoft.UI.Xaml.dll" -Recurse -File
+          if ($xamlDll.Count -eq 0) {
+            throw "Microsoft.UI.Xaml.dll was not found in the publish output."
+          }
+
+      - name: Package complete app folder
         shell: pwsh
         run: |
-          $publishedApp = "dist/GalaxyWearable-Windows/win-x64/GalaxyWearable.Windows.exe"
-          if (!(Test-Path $publishedApp)) {
-            throw "Published single-file app was not found at $publishedApp"
-          }
+          Compress-Archive -Path "dist/GalaxyWearable-Windows/win-x64/*" -DestinationPath "dist/Galaxy-Wearable-Windows.zip" -Force
 
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item $publishedApp "dist/GalaxyWearable.exe" -Force
-
-          $size = (Get-Item "dist/GalaxyWearable.exe").Length
+          $size = (Get-Item "dist/Galaxy-Wearable-Windows.zip").Length
           if ($size -lt 1MB) {
-            throw "GalaxyWearable.exe is unexpectedly small ($size bytes); refusing to publish an incomplete app."
+            throw "Galaxy-Wearable-Windows.zip is unexpectedly small ($size bytes); refusing to publish an incomplete app."
           }
 
-      - name: Upload single-file app
+      - name: Upload Windows app ZIP
         uses: actions/upload-artifact@v7.0.2
         with:
           name: Galaxy-Wearable-Windows
-          path: dist/GalaxyWearable.exe
+          path: dist/Galaxy-Wearable-Windows.zip
           if-no-files-found: error
           retention-days: 14

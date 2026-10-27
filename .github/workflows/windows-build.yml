@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-windows-x64:
-    name: Build Windows x64
+    name: Build single-file Windows launcher
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -26,7 +26,7 @@ jobs:
       - name: Set up Visual Studio MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Publish self-contained Windows app
+      - name: Publish self-contained WinUI application payload
         shell: pwsh
         run: >-
           msbuild GalaxyWearable.Windows/GalaxyWearable.Windows.csproj
@@ -35,16 +35,35 @@ jobs:
           /property:Configuration=Release
           /property:RuntimeIdentifier=win-x64
           /property:SelfContained=true
-          /property:PublishDir=..\dist\GalaxyWearable-Windows\win-x64\
+          /property:PublishDir=..\\dist\\GalaxyWearable-Windows\\win-x64\\
           /property:Platform=x64
           /property:WindowsPackageType=None
           /property:EnableMsixTooling=false
           /property:WindowsAppSDKSelfContained=true
 
-      - name: Upload Windows x64 build
+      - name: Package application files into launcher
+        shell: pwsh
+        run: |
+          $payload = "dist/GalaxyWearable-Windows/win-x64"
+          if (!(Test-Path "$payload/GalaxyWearable.Windows.exe")) {
+            throw "Published GalaxyWearable.Windows.exe was not found in $payload"
+          }
+
+          Compress-Archive -Path "$payload/*" -DestinationPath "dist/GalaxyWearable-payload.zip" -Force
+
+          dotnet publish GalaxyWearable.Launcher/GalaxyWearable.Launcher.csproj --configuration Release --output dist/launcher-publish -p:PublishSingleFile=true -p:SelfContained=true -p:RuntimeIdentifier=win-x64
+
+          $launcher = "dist/launcher-publish/GalaxyWearable.exe"
+          if (!(Test-Path $launcher)) {
+            throw "Single-file launcher was not produced at $launcher"
+          }
+
+          Copy-Item $launcher "dist/GalaxyWearable.exe" -Force
+
+      - name: Upload single-file launcher
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: Galaxy-Wearable-Windows-win-x64
-          path: dist/GalaxyWearable-Windows/win-x64/
+          name: Galaxy-Wearable-Windows
+          path: dist/GalaxyWearable.exe
           if-no-files-found: error
           retention-days: 14

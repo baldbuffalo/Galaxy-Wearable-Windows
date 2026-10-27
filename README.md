@@ -2,40 +2,43 @@
 
 A native Windows companion app exploring Bluetooth connectivity and interoperability with Samsung Galaxy wearables, starting with the Galaxy Fit3.
 
-> **Status:** Early development. This project is not affiliated with or endorsed by Samsung. A Windows Bluetooth connection is not the same as completing Samsung's proprietary companion-pairing protocol.
+> **Status:** Early research build. This project is not affiliated with or endorsed by Samsung. BLE discovery/connection does not mean the watch has completed Samsung's proprietary companion-pairing protocol.
 
-## Goals
+## Current features
 
-- Native Windows 10/11 desktop experience, built with C# and WinUI 3.
-- Modular device and capability architecture so support can expand without copying Samsung's screen-by-screen UI.
-- Discover nearby Bluetooth LE devices, connect to a selected device, and inspect advertised GATT services.
-- Build toward stable connection and automatic reconnection.
-- Investigate documented and publicly researched Fit3 services before implementing device-specific communication.
-- Clearly distinguish tested features from experimental or unavailable features.
+- Scan for likely Samsung/Galaxy/Gear wearables using advertisement names, Samsung manufacturer data, and standard watch/heart-rate service indicators.
+- Select a discovered device and open a Bluetooth LE connection.
+- Enumerate exposed GATT services and characteristics and display their UUIDs/properties.
+- Subscribe to the standard Heart Rate Measurement characteristic (`2A37`) when exposed and actively notifying.
+- Attempt to turn on the Windows Bluetooth radio before scanning, subject to Windows permissions and hardware support.
 
-## Current milestone
+## Important limitations
 
-The initial app shell provides Bluetooth LE advertisement discovery and a read-only GATT service inspector. The project goal is to investigate and implement a full companion-pairing flow for Windows, starting with Galaxy Fit3. Official-companion pairing, health-data access, and firmware updates are not implemented or verified yet.
+The app does **not yet impersonate a Galaxy phone**. Samsung companion pairing/authentication, the proprietary accessory-protocol handshake, authenticated data channels, notifications/settings sync, health history, firmware updates, and automatic reconnect are not implemented or verified. A successful BLE connection is only the transport layer.
+
+The app does not send guessed proprietary commands or claim full phone-like pairing. See [Fit3 protocol research notes](docs/fit3-protocol-notes.md) for the known evidence, limits, and next validation steps.
 
 ## Requirements
 
 - Windows 10 version 1809 or later (Windows 11 recommended)
 - Visual Studio 2022 with the **WinUI application development** workload and Windows App SDK support
-- Bluetooth hardware for live discovery
+- Bluetooth LE-capable hardware for live discovery and connection
 
 ## Build
 
-Open `GalaxyWearable.Windows.sln` in Visual Studio 2022, restore NuGet packages, select the `x64` configuration, and run the `GalaxyWearable.Windows` project. Bluetooth discovery requires Bluetooth to be enabled in Windows.
+Open `GalaxyWearable.Windows.sln` in Visual Studio, restore NuGet packages, select the `x64` configuration, and run the `GalaxyWearable.Windows` project. Bluetooth discovery requires Bluetooth to be enabled in Windows. SDK and package versions are intentionally unchanged.
 
 ## Project layout
 
 - `GalaxyWearable.Windows/` — WinUI 3 app and UI
-- `Models/` — device and capability models
-- `Services/` — Bluetooth discovery and future protocol implementations
+- `GalaxyWearable.Windows/Models/` — device models
+- `GalaxyWearable.Windows/Services/` — BLE discovery and connection/GATT services
+- `docs/fit3-protocol-notes.md` — research evidence and protocol limitations
 
-## Protocol research
+## References
 
-The Fit3 may expose standard Bluetooth services alongside Samsung-specific services. Initial discovery is intentionally read-only: it does not send guessed proprietary commands or attempt to bypass authentication. Any protocol support will be documented with its evidence and test status.
+- [Fit3Free: public Galaxy Fit3 BLE/GATT observations](https://github.com/Astroisback/Fit3Free) — third-party reverse-engineering research, not an official Samsung specification.
+- [Samsung Gulf: pairing the Galaxy Fit3 with a phone](https://www.samsung.com/ae/support/mobile-devices/pairing-your-galaxy-fit3-with-your-phone/).
 
 ## License
 

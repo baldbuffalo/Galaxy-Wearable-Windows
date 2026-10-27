@@ -115,7 +115,7 @@ public sealed partial class MainWindow : Window
 
         if (DevicesList.SelectedItem is not WearableDevice selected)
         {
-            ConnectionHint.Text = "Select your Galaxy Fit3 or another detected watch first.";
+            ConnectionHint.Text = "Select a detected Samsung wearable first.";
             return;
         }
 

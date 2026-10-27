@@ -49,17 +49,12 @@ public sealed class BluetoothDiscoveryService : IDisposable
             ? $"Bluetooth device {args.BluetoothAddress:X12}"
             : args.Advertisement.LocalName;
 
-        // IsConnectable was introduced in Windows 10 version 2004 (build 19041).
-        // Keep scanning compatible with the project's lower minimum OS target.
-        var isConnectable = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041)
-            && args.IsConnectable;
-
         _devices[args.BluetoothAddress] = new WearableDevice(
             name,
             args.BluetoothAddress.ToString("X12"),
             FormatAddress(args.BluetoothAddress),
             args.RawSignalStrengthInDBm,
-            isConnectable,
+            args.IsConnectable,
             DateTimeOffset.Now);
 
         var snapshot = _devices.Values

@@ -197,9 +197,14 @@
                                Text="Select Check for updates to compare this app with the latest release."
                                TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <Button x:Name="CheckUpdatesButton" Content="Check for updates"
-                            Click="CheckUpdatesButton_Click" HorizontalAlignment="Left"
-                            MinHeight="40" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="CheckUpdatesButton" Content="Check for updates"
+                                Click="CheckUpdatesButton_Click" HorizontalAlignment="Left"
+                                MinHeight="40" />
+                        <Button x:Name="UpdateButton" Content="Update now"
+                                Click="UpdateButton_Click" HorizontalAlignment="Left"
+                                MinHeight="40" Visibility="Collapsed" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </Grid>

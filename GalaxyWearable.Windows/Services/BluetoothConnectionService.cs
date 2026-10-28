@@ -163,9 +163,19 @@ public sealed class BluetoothConnectionService : IDisposable
         _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic.ValueChanged += SapNotifyCharacteristic_ValueChanged;
 
-        var notifyStatus = await _sapNotifyCharacteristic
-            .WriteClientCharacteristicConfigurationDescriptorAsync(
-                GattClientCharacteristicConfigurationDescriptorValue.Notify);
+        GattCommunicationStatus notifyStatus;
+        try
+        {
+            notifyStatus = await _sapNotifyCharacteristic
+                .WriteClientCharacteristicConfigurationDescriptorAsync(
+                    GattClientCharacteristicConfigurationDescriptorValue.Notify);
+        }
+        catch (Exception ex)
+        {
+            _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
+            return new[] { $"• Enabling SAP notifications threw an error: {ex.Message}" };
+        }
+
         if (notifyStatus != GattCommunicationStatus.Success)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
@@ -246,11 +256,11 @@ public sealed class BluetoothConnectionService : IDisposable
 
         AddSapDiagnostic("• Sent the matching SAP capability response (opcode 0x15).");
 
-        // The smallest encoded WatchInfo frame is 17 bytes. The upper bound
-        // allows the common 512-byte SAP transport MTU plus a small BLE variation.
-        if (_sapTransportMtu < 17 || _sapTransportMtu > 517)
+        // The smallest encoded WatchInfo frame is 17 bytes. Bound the reported
+        // transport size to the protocol's documented 4096-byte reassembly limit.
+        if (_sapTransportMtu < 17 || _sapTransportMtu > 4096)
         {
-            AddSapDiagnostic("• The advertised SAP transport MTU is outside the supported 17–517 byte range; WatchInfo was not sent.");
+            AddSapDiagnostic("• The advertised SAP transport MTU is outside the supported 17–4096 byte range; WatchInfo was not sent.");
             _sapHandshakeCompleted?.TrySetResult(true);
             return;
         }

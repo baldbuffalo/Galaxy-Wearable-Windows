@@ -201,17 +201,27 @@ public sealed class BluetoothDiscoveryService : IDisposable
             && !nameSuggestsSamsungWearable)
             return;
 
-        var displayName = string.IsNullOrWhiteSpace(name)
-            ? "Samsung watch"
-            : name;
+        var addressId = args.BluetoothAddress.ToString("X12");
+        var address = FormatAddress(args.BluetoothAddress);
+        var seenAt = DateTimeOffset.Now;
 
-        _devices[args.BluetoothAddress] = new WearableDevice(
-            displayName,
-            args.BluetoothAddress.ToString("X12"),
-            FormatAddress(args.BluetoothAddress),
-            args.RawSignalStrengthInDBm,
-            args.IsConnectable,
-            DateTimeOffset.Now);
+        _devices.AddOrUpdate(
+            args.BluetoothAddress,
+            _ => new WearableDevice(
+                string.IsNullOrWhiteSpace(name) ? "Samsung watch" : name,
+                addressId,
+                address,
+                args.RawSignalStrengthInDBm,
+                args.IsConnectable,
+                seenAt),
+            (_, existing) => new WearableDevice(
+                string.IsNullOrWhiteSpace(name) ? existing.Name : name,
+                addressId,
+                address,
+                args.RawSignalStrengthInDBm,
+                args.IsConnectable,
+                seenAt,
+                existing.DeviceInformationId));
 
         PublishDevices();
     }

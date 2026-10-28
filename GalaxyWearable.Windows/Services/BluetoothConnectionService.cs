@@ -13,7 +13,6 @@ public sealed class BluetoothConnectionService : IDisposable
 {
     private BluetoothLEDevice? _device;
     private readonly List<GattDeviceService> _services = new();
-    private readonly List<GattCharacteristic> _characteristics = new();
     private GattCharacteristic? _sapNotifyCharacteristic;
     private GattCharacteristic? _sapWriteCharacteristic;
     private TaskCompletionSource<bool>? _sapHandshakeCompleted;
@@ -114,7 +113,6 @@ public sealed class BluetoothConnectionService : IDisposable
                     continue;
                 }
 
-                _characteristics.AddRange(characteristicsResult.Characteristics);
                 foreach (var characteristic in characteristicsResult.Characteristics)
                     lines.Add($"  • {characteristic.Uuid} [{characteristic.CharacteristicProperties}]");
             }
@@ -177,7 +175,6 @@ public sealed class BluetoothConnectionService : IDisposable
         if (result.Status != GattCommunicationStatus.Success)
             return new[] { $"• SAP characteristic discovery failed: {result.Status}." };
 
-        _characteristics.AddRange(result.Characteristics);
         _sapNotifyCharacteristic = result.Characteristics.FirstOrDefault(item => item.Uuid == SapNotifyUuid);
         _sapWriteCharacteristic = result.Characteristics.FirstOrDefault(item => item.Uuid == SapWriteUuid);
         if (_sapNotifyCharacteristic is null || _sapWriteCharacteristic is null)
@@ -470,7 +467,6 @@ public sealed class BluetoothConnectionService : IDisposable
         if (result.Status != GattCommunicationStatus.Success)
             return $"service present; characteristic discovery returned {result.Status}";
 
-        _characteristics.AddRange(result.Characteristics);
         var fields = new List<string>();
         foreach (var characteristic in result.Characteristics)
         {
@@ -532,10 +528,6 @@ public sealed class BluetoothConnectionService : IDisposable
         lock (_sapDiagnostics)
             _sapDiagnostics.Clear();
 
-        foreach (var characteristic in _characteristics)
-            characteristic.Dispose();
-        _characteristics.Clear();
-
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();
@@ -568,10 +560,6 @@ public sealed class BluetoothConnectionService : IDisposable
         Volatile.Write(ref _sapHandshakeStarted, 0);
         _sapWatchInfoRequestSent = false;
         _sapTransportMtu = 0;
-
-        foreach (var characteristic in _characteristics)
-            characteristic.Dispose();
-        _characteristics.Clear();
 
         foreach (var service in _services)
             service.Dispose();

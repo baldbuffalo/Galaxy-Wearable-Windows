@@ -21,6 +21,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
         ScanningMode = BluetoothLEScanningMode.Active
     };
     private readonly ConcurrentDictionary<ulong, WearableDevice> _devices = new();
+    private int _disposed;
 
     public event EventHandler<IReadOnlyList<WearableDevice>>? DevicesChanged;
     public bool IsScanning => _watcher.Status == BluetoothLEAdvertisementWatcherStatus.Started;
@@ -34,13 +35,17 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
     public async Task StartAsync()
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         LastStopError = null;
 
         // A quick stop/start can leave the watcher in Stopping briefly. Wait
         // for that transition instead of silently skipping Start().
         for (var attempt = 0; attempt < 20
              && _watcher.Status == BluetoothLEAdvertisementWatcherStatus.Stopping; attempt++)
+        {
             await Task.Delay(50);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        }
 
         if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Created
             or BluetoothLEAdvertisementWatcherStatus.Stopped)
@@ -56,12 +61,17 @@ public sealed class BluetoothDiscoveryService : IDisposable
         // then include matching devices even if their advertisements omit watch metadata.
         // This is specifically for pairing new watches, not just listing paired devices.
         await Task.Delay(1200);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await AddUnpairedSamsungWearablesAsync();
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         // The watcher status can update asynchronously after Start() returns.
         // Wait briefly before the UI decides that scanning failed.
         for (var attempt = 0; attempt < 10 && !IsScanning; attempt++)
+        {
             await Task.Delay(100);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        }
 
         if (!IsScanning)
         {
@@ -261,6 +271,9 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         Stop();
         _watcher.Received -= OnAdvertisementReceived;
         _watcher.Stopped -= OnWatcherStopped;

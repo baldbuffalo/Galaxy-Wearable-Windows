@@ -124,10 +124,14 @@
                     </Border>
                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                         <TextBlock Text="Nearby devices" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock x:Name="DiscoveryHint"
-                                   Text="Choose Find devices to look for nearby Samsung wearables."
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   TextWrapping="Wrap" />
+                        <ScrollViewer MaxHeight="150"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock x:Name="DiscoveryHint"
+                                       Text="Choose Find devices to look for nearby Samsung wearables."
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </ScrollViewer>
                     </StackPanel>
                 </Grid>
             </Border>

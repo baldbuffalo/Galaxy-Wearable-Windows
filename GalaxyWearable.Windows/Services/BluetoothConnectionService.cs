@@ -26,6 +26,8 @@ public sealed class BluetoothConnectionService : IDisposable
     private static readonly Guid SapServiceUuid = Guid.Parse("00001a1a-0000-1000-8000-00805f9b34fb");
     private static readonly Guid SapNotifyUuid = Guid.Parse("797ae4e9-2e58-4fe8-b48d-b5c79599fb9b");
     private static readonly Guid SapWriteUuid = Guid.Parse("63e30bad-4206-4596-839f-e47cbf7a4b5d");
+    public event Action<string, bool>? ConnectionStateChanged;
+
     public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
 
     public async Task<string> ConnectAndInspectAsync(string bluetoothAddress)
@@ -38,6 +40,9 @@ public sealed class BluetoothConnectionService : IDisposable
         _device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
         if (_device is null)
             throw new InvalidOperationException("Windows could not open this Bluetooth LE device. Make sure it is nearby and advertising.");
+
+        _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
+        _device.ConnectionStatusChanged += Device_ConnectionStatusChanged;
 
         try
         {
@@ -390,6 +395,13 @@ public sealed class BluetoothConnectionService : IDisposable
         return crc;
     }
 
+    private void Device_ConnectionStatusChanged(BluetoothLEDevice sender, object args)
+    {
+        ConnectionStateChanged?.Invoke(
+            sender.BluetoothAddress.ToString("X12"),
+            sender.ConnectionStatus == BluetoothConnectionStatus.Connected);
+    }
+
     private void AddSapDiagnostic(string message)
     {
         lock (_sapDiagnostics)
@@ -474,8 +486,14 @@ public sealed class BluetoothConnectionService : IDisposable
             service.Dispose();
         _services.Clear();
 
-        _device?.Dispose();
-        _device = null;
+        if (_device is not null)
+        {
+            var address = _device.BluetoothAddress.ToString("X12");
+            _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
+            _device.Dispose();
+            _device = null;
+            ConnectionStateChanged?.Invoke(address, false);
+        }
     }
 
     public void Dispose()
@@ -491,7 +509,11 @@ public sealed class BluetoothConnectionService : IDisposable
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();
-        _device?.Dispose();
-        _device = null;
+        if (_device is not null)
+        {
+            _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
+            _device.Dispose();
+            _device = null;
+        }
     }
 }

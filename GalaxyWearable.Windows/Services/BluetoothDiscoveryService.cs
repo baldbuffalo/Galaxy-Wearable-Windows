@@ -71,34 +71,40 @@ public sealed class BluetoothDiscoveryService : IDisposable
     {
         try
         {
-            var selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(false);
-            var unpairedDevices = await DeviceInformation.FindAllAsync(selector);
-
-            foreach (var info in unpairedDevices)
+            // Enumerate both paired and unpaired BLE devices. Filtering only for
+            // PairingState(false) silently hid watches that were already paired in
+            // Windows, including devices that were not currently advertising.
+            foreach (var isPaired in new[] { true, false })
             {
-                var name = info.Name?.Trim() ?? string.Empty;
-                if (!NameSuggestsSamsungWearable(name))
-                    continue;
+                var selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(isPaired);
+                var knownDevices = await DeviceInformation.FindAllAsync(selector);
 
-                try
+                foreach (var info in knownDevices)
                 {
-                    using var device = await BluetoothLEDevice.FromIdAsync(info.Id);
-                    if (device is null || device.BluetoothAddress == 0)
+                    var name = info.Name?.Trim() ?? string.Empty;
+                    if (!NameSuggestsSamsungWearable(name))
                         continue;
 
-                    var displayName = string.IsNullOrWhiteSpace(device.Name) ? name : device.Name.Trim();
-                    _devices[device.BluetoothAddress] = new WearableDevice(
-                        displayName,
-                        device.BluetoothAddress.ToString("X12"),
-                        FormatAddress(device.BluetoothAddress),
-                        null,
-                        true,
-                        DateTimeOffset.Now,
-                        info.Id);
-                }
-                catch
-                {
-                    // Keep scanning advertisements if Windows cannot open one paired entry.
+                    try
+                    {
+                        using var device = await BluetoothLEDevice.FromIdAsync(info.Id);
+                        if (device is null || device.BluetoothAddress == 0)
+                            continue;
+
+                        var displayName = string.IsNullOrWhiteSpace(device.Name) ? name : device.Name.Trim();
+                        _devices[device.BluetoothAddress] = new WearableDevice(
+                            displayName,
+                            device.BluetoothAddress.ToString("X12"),
+                            FormatAddress(device.BluetoothAddress),
+                            null,
+                            true,
+                            DateTimeOffset.Now,
+                            info.Id);
+                    }
+                    catch
+                    {
+                        // Keep scanning advertisements if Windows cannot open this device.
+                    }
                 }
             }
 
@@ -124,9 +130,9 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
         // Some watches advertise a model number rather than their friendly name.
         var SamsungWearableModelCode =
-            normalized.StartsWith("SM-R", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("SM-L", StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith("SM-W", StringComparison.OrdinalIgnoreCase);
+            normalized.Contains("SM-R", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("SM-L", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("SM-W", StringComparison.OrdinalIgnoreCase);
 
         return brandAndType || SamsungWearableModelCode;
     }

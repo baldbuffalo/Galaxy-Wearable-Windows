@@ -1,6 +1,5 @@
 using global::Windows.Devices.Bluetooth;
 using global::Windows.Devices.Bluetooth.GenericAttributeProfile;
-using global::Windows.Devices.Enumeration;
 using GalaxyWearable.Windows.Models;
 
 namespace GalaxyWearable.Windows.Services;
@@ -37,13 +36,23 @@ public sealed class GattInspectionService
                 return (null, Array.Empty<GattServiceInfo>(), $"GATT service discovery failed: {status}");
             }
 
-            var services = result.Services.Select(service =>
-                new GattServiceInfo(
-                    service.Uuid.ToString(),
-                    GetKnownName(service.Uuid),
-                    service.DeviceAccessInformation.CurrentStatus.ToString()))
-                .OrderBy(service => service.Name)
-                .ToArray();
+            var discoveredServices = result.Services;
+            GattServiceInfo[] services;
+            try
+            {
+                services = discoveredServices.Select(service =>
+                    new GattServiceInfo(
+                        service.Uuid.ToString(),
+                        GetKnownName(service.Uuid),
+                        service.DeviceAccessInformation.CurrentStatus.ToString()))
+                    .OrderBy(service => service.Name)
+                    .ToArray();
+            }
+            finally
+            {
+                foreach (var service in discoveredServices)
+                    service.Dispose();
+            }
 
             return (device, services, $"Connected to {device.Name}. Found {services.Length} GATT service(s).");
         }
@@ -59,7 +68,6 @@ public sealed class GattInspectionService
         "00001800-0000-1000-8000-00805f9b34fb" => "Generic Access",
         "00001801-0000-1000-8000-00805f9b34fb" => "Generic Attribute",
         "0000180a-0000-1000-8000-00805f9b34fb" => "Device Information",
-        "0000180d-0000-1000-8000-00805f9b34fb" => "Heart Rate",
         "0000180f-0000-1000-8000-00805f9b34fb" => "Battery Service",
         _ => "Vendor or custom service"
     };

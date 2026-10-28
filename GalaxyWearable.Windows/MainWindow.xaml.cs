@@ -378,8 +378,8 @@ public sealed partial class MainWindow : Window
             // Do not invoke Windows pairing or Samsung's new-phone setup flow. Open
             // the currently available BLE services only, preserving the existing S26 bond.
             var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id, selected.DeviceInformationId);
+            _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? selected.Id;
             await SavePairedDeviceAsync(selected);
-            _connectedDeviceId = selected.Id;
             _connectionLostDeviceId = null;
             DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed. {protocolReport}";
         }
@@ -404,7 +404,7 @@ public sealed partial class MainWindow : Window
     {
         var folder = Path.GetDirectoryName(SavedDevicePath)!;
         Directory.CreateDirectory(folder);
-        var json = JsonSerializer.Serialize(new SavedWearable(device.Name, device.Id, device.DeviceInformationId));
+        var json = JsonSerializer.Serialize(new SavedWearable(device.Name, _connection.ConnectedBluetoothAddress ?? device.Id, device.DeviceInformationId));
         await File.WriteAllTextAsync(SavedDevicePath, json);
     }
 
@@ -491,7 +491,7 @@ public sealed partial class MainWindow : Window
                     DiscoveryHint.Text = $"Reconnecting to {saved.Name}…";
             });
             await _connection.ConnectAndInspectAsync(saved.Id, saved.DeviceInformationId);
-            _connectedDeviceId = saved.Id;
+            _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? saved.Id;
             _connectionLostDeviceId = null;
             _dispatcherQueue.TryEnqueue(() =>
             {

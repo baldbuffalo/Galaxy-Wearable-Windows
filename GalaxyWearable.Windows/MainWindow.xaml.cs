@@ -272,6 +272,14 @@ public sealed partial class MainWindow : Window
         if (_isRefreshingDevices || DevicesList.SelectedItem is not WearableDevice selected)
             return;
 
+        // Startup auto-reconnect and a manual selection must not mutate the same
+        // GATT session at the same time.
+        if (_isRestoringConnection)
+        {
+            DiscoveryHint.Text = "Reconnecting to your saved wearable. Select a device again when this finishes.";
+            return;
+        }
+
         if (_connectedDeviceId == selected.Id && _connection.IsConnected)
         {
             DiscoveryHint.Text = $"{selected.Name} is connected.";
@@ -336,6 +344,7 @@ public sealed partial class MainWindow : Window
     {
         if (sender.State != RadioState.On)
         {
+            await _connection.DisconnectAsync();
             _dispatcherQueue.TryEnqueue(() =>
             {
                 _connectedDeviceId = null;

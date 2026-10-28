@@ -292,6 +292,12 @@ public sealed class BluetoothConnectionService : IDisposable
                 ? GattWriteOption.WriteWithResponse
                 : GattWriteOption.WriteWithoutResponse;
             var result = await _sapWriteCharacteristic.WriteValueWithResultAsync(writer.DetachBuffer(), option);
+            if (result.Status == GattCommunicationStatus.Success
+                && option == GattWriteOption.WriteWithoutResponse)
+            {
+                // The Fit3 transport reference recommends pacing no-response writes.
+                await Task.Delay(50);
+            }
             return result.Status;
         }
         finally

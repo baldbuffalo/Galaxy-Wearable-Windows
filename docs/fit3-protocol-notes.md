@@ -8,7 +8,6 @@ Last reviewed: 2026-10-27
 
 The public [Fit3Free project](https://github.com/Astroisback/Fit3Free) documents a Galaxy Fit3 capture made over BLE without pairing. Its published notes report:
 
-- Standard Heart Rate service `180D`, with Heart Rate Measurement characteristic `2A37`; notifications can be available while the watch is actively measuring.
 - Standard Device Information service `180A`.
 - Samsung/vendor-specific services, including `1A1A`, `FD69`, and custom 128-bit UUID services. The notes describe some useful characteristics as bond-gated and identify a likely main accessory-protocol channel.
 - Some values and services are unavailable without the relevant bond/authentication state.
@@ -24,7 +23,7 @@ The general-purpose Windows app uses shared BLE discovery, connection, and GATT 
 1. **Discovery:** listens for BLE advertisements and filters for likely Samsung wearables using generic advertised names and standard metadata.
 2. **Connection:** opens the selected BLE device through Windows' Bluetooth LE APIs.
 3. **GATT inspection:** requests the live service list and characteristic properties and shows them in the app.
-4. **Standard heart-rate path:** can subscribe to the standard `2A37` notification characteristic when it is exposed and the watch is publishing measurements. Notifications decode the standard flags, sensor-contact bits, optional energy-expended field, and RR-interval count.
+
 5. **Standard identity fields:** reads readable manufacturer, model, firmware, and software fields from `180A` when the device exposes them. These fields may be placeholders or unavailable on some wearables.
 
 These are transport/discovery capabilities. A successful BLE connection is not the same thing as a Samsung watch believing this PC is an authenticated Galaxy Wearable phone.
@@ -41,9 +40,9 @@ The app must not send guessed proprietary commands or claim phone-like pairing u
 
 ## Findings from public protocol research (2026-10-28)
 
-The public Fit3Free capture reports that the Fit3 exposes the standard Heart Rate service (`180D` / `2A37`) without a bond. It also reports proprietary services including `1A1A`, `FD69`, and custom 128-bit services, with useful data characteristics on at least some channels requiring a bond. A service UUID being visible is not proof that its payload is usable.
+The public Fit3Free capture reports proprietary services including `1A1A`, `FD69`, and custom 128-bit services, with useful data characteristics on at least some channels requiring a bond. A service UUID being visible is not proof that its payload is usable.
 
-The Windows app now deliberately avoids calling Windows `PairAsync` from its device-selection flow and does not initiate Samsung's new-phone setup. It connects to the BLE address, enumerates visible services, and attempts to subscribe to the standard heart-rate measurement if available. This can provide a limited unbonded data path without changing the existing S26 pairing. It is **not** phone-protocol emulation: the authenticated Samsung accessory handshake, bond/key state, and proprietary message framing remain unknown and are not guessed. The app cannot reuse the S26's existing bond merely by connecting to the same Fit3; Bluetooth bond credentials are managed by each host's Bluetooth stack.
+The Windows app now deliberately avoids calling Windows `PairAsync` from its device-selection flow and does not initiate Samsung's new-phone setup. It connects to the BLE address, enumerates visible services. This can provide a limited unbonded data path without changing the existing S26 pairing. It is **not** phone-protocol emulation: the authenticated Samsung accessory handshake, bond/key state, and proprietary message framing remain unknown and are not guessed. The app cannot reuse the S26's existing bond merely by connecting to the same Fit3; Bluetooth bond credentials are managed by each host's Bluetooth stack.
 
 A true compatible-phone implementation still needs a captured, authorized protocol trace and a complete understanding of the pairing/authentication exchange. We must not infer keys, replay unknown payloads, or write to proprietary characteristics based only on their UUIDs.
 
@@ -51,7 +50,6 @@ A true compatible-phone implementation still needs a captured, authorized protoc
 
 1. Run the app with the Fit3 nearby and confirm its advertised name/address appears.
 2. Select it and connect; save the displayed GATT UUIDs and any communication statuses.
-3. Confirm whether `180D/2A37` is exposed and whether notifications arrive while a workout or continuous heart-rate measurement is active.
 4. Compare observed service/characteristic UUIDs and permissions with the published Fit3Free reference, recording firmware/software versions.
 5. After the first Fit3 baseline, repeat discovery and capability tests on other Samsung watch families when hardware is available.
 6. Research the proprietary handshake from legitimate, observable behavior before attempting companion pairing. Do not treat the existence of a UUID as evidence that its payload format or authentication is known.

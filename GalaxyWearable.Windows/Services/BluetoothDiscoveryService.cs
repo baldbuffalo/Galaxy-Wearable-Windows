@@ -36,15 +36,17 @@ public sealed class BluetoothDiscoveryService : IDisposable
     {
         LastStopError = null;
 
-        // Windows Settings can already know about a paired watch even when it is
-        // not currently advertising. Seed the list from paired BLE devices first.
-        await AddPairedSamsungWearablesAsync();
-
         if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Created
             or BluetoothLEAdvertisementWatcherStatus.Stopped)
         {
             _watcher.Start();
         }
+
+        // Let active BLE discovery populate Windows' unpaired-device enumeration,
+        // then include matching devices even if their advertisements omit watch metadata.
+        // This is specifically for pairing new watches, not just listing paired devices.
+        await Task.Delay(1200);
+        await AddUnpairedSamsungWearablesAsync();
 
         // The watcher status can update asynchronously after Start() returns.
         // Wait briefly before the UI decides that scanning failed.
@@ -65,14 +67,14 @@ public sealed class BluetoothDiscoveryService : IDisposable
             _watcher.Stop();
     }
 
-    private async Task AddPairedSamsungWearablesAsync()
+    private async Task AddUnpairedSamsungWearablesAsync()
     {
         try
         {
-            var selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(true);
-            var pairedDevices = await DeviceInformation.FindAllAsync(selector);
+            var selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(false);
+            var unpairedDevices = await DeviceInformation.FindAllAsync(selector);
 
-            foreach (var info in pairedDevices)
+            foreach (var info in unpairedDevices)
             {
                 var name = info.Name?.Trim() ?? string.Empty;
                 if (!NameSuggestsSamsungWearable(name))
@@ -103,19 +105,30 @@ public sealed class BluetoothDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            // Pair-list access can be restricted on some Windows configurations.
-            // Advertisement scanning should still be allowed to proceed.
-            LastStopError ??= $"Could not enumerate paired Bluetooth LE devices: {ex.Message}";
+            // Windows may restrict device enumeration; advertisement scanning remains active.
+            LastStopError ??= $"Could not enumerate unpaired Bluetooth LE devices: {ex.Message}";
         }
     }
 
-    private static bool NameSuggestsSamsungWearable(string name) =>
-        (name.Contains("Samsung", StringComparison.OrdinalIgnoreCase)
-         || name.Contains("Galaxy", StringComparison.OrdinalIgnoreCase)
-         || name.Contains("Gear", StringComparison.OrdinalIgnoreCase))
-        && (name.Contains("Watch", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("Fit", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("Gear", StringComparison.OrdinalIgnoreCase));
+    private static bool NameSuggestsSamsungWearable(string name)
+    {
+        var normalized = name.Replace(" ", string.Empty, StringComparison.OrdinalIgnoreCase);
+        var brandAndType =
+            (name.Contains("Samsung", StringComparison.OrdinalIgnoreCase)
+             || name.Contains("Galaxy", StringComparison.OrdinalIgnoreCase)
+             || name.Contains("Gear", StringComparison.OrdinalIgnoreCase))
+            && (name.Contains("Watch", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Fit", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Gear", StringComparison.OrdinalIgnoreCase));
+
+        // Some watches advertise a model number rather than their friendly name.
+        var SamsungWearableModelCode =
+            normalized.StartsWith("SM-R", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("SM-L", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("SM-W", StringComparison.OrdinalIgnoreCase);
+
+        return brandAndType || SamsungWearableModelCode;
+    }
 
     private void PublishDevices()
     {

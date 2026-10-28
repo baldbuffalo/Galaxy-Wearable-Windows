@@ -485,16 +485,28 @@ public sealed partial class MainWindow : Window
             if (saved is null || string.IsNullOrWhiteSpace(saved.Id))
                 return;
 
-            _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = $"Reconnecting to {saved.Name}…");
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_isClosed)
+                    DiscoveryHint.Text = $"Reconnecting to {saved.Name}…";
+            });
             await _connection.ConnectAndInspectAsync(saved.Id);
             _connectedDeviceId = saved.Id;
             _connectionLostDeviceId = null;
-            _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = $"Connected to saved wearable {saved.Name}.");
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_isClosed)
+                    DiscoveryHint.Text = $"Connected to saved wearable {saved.Name}.";
+            });
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Saved wearable reconnect failed: {ex}");
-            _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = "Saved wearable is not reachable yet. It will be retried when Bluetooth is turned on again.");
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_isClosed)
+                    DiscoveryHint.Text = "Saved wearable is not reachable yet. It will be retried when Bluetooth is turned on again.";
+            });
         }
         finally
         {
@@ -508,6 +520,9 @@ public sealed partial class MainWindow : Window
     {
         _dispatcherQueue.TryEnqueue(() =>
         {
+            if (_isClosed)
+                return;
+
             // Ignore delayed events from a previously selected wearable.
             if (!string.Equals(_connectedDeviceId, address, StringComparison.OrdinalIgnoreCase))
                 return;
@@ -529,6 +544,9 @@ public sealed partial class MainWindow : Window
     {
         _dispatcherQueue.TryEnqueue(() =>
         {
+            if (_isClosed)
+                return;
+
             foreach (var device in devices)
                 _devices[device.Id] = device;
 

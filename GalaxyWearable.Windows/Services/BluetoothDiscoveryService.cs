@@ -102,14 +102,28 @@ public sealed class BluetoothDiscoveryService : IDisposable
                             continue;
 
                         var displayName = string.IsNullOrWhiteSpace(device.Name) ? name : device.Name.Trim();
-                        _devices[device.BluetoothAddress] = new WearableDevice(
-                            displayName,
-                            device.BluetoothAddress.ToString("X12"),
-                            FormatAddress(device.BluetoothAddress),
-                            null,
-                            true,
-                            DateTimeOffset.Now,
-                            info.Id);
+                        if (_devices.TryGetValue(device.BluetoothAddress, out var observed)
+                            && observed.SignalStrength is not null)
+                        {
+                            // Keep live advertisement data (RSSI/connectability) instead
+                            // of replacing it with weaker paired-device enumeration data.
+                            _devices[device.BluetoothAddress] = observed with
+                            {
+                                Name = displayName,
+                                DeviceInformationId = info.Id
+                            };
+                        }
+                        else
+                        {
+                            _devices[device.BluetoothAddress] = new WearableDevice(
+                                displayName,
+                                device.BluetoothAddress.ToString("X12"),
+                                FormatAddress(device.BluetoothAddress),
+                                null,
+                                false,
+                                DateTimeOffset.Now,
+                                info.Id);
+                        }
                     }
                     catch
                     {

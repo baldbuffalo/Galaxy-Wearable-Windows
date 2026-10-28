@@ -124,39 +124,24 @@
                                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                                 <Grid ColumnSpacing="22">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="148" />
+                                        <ColumnDefinition Width="180" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
-                                    <!-- Stylised wearable illustration, kept local and resolution-independent -->
-                                    <Border Width="136" Height="156" CornerRadius="10"
+                                    <Border Width="164" Height="176" CornerRadius="10"
                                             Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                             HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Grid>
-                                            <Border Width="42" Height="132" CornerRadius="12"
-                                                    Background="#FF34363B"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center" />
-                                            <Border Width="66" Height="78" CornerRadius="19"
-                                                    Background="#FF17191D"
-                                                    BorderBrush="#FF777B83" BorderThickness="2"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center">
-                                                <Grid>
-                                                    <Border Margin="7" CornerRadius="13"
-                                                            Background="#FF242832" />
-                                                    <StackPanel VerticalAlignment="Center"
-                                                                HorizontalAlignment="Center"
-                                                                Spacing="5">
-                                                        <TextBlock Text="10:08" FontSize="15"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="White" />
-                                                        <Border Width="28" Height="3" CornerRadius="2"
-                                                                Background="#FF6E9BFF" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
+                                            <Image Source="{Binding ProductImage}"
+                                                   AutomationProperties.Name="{Binding ProductImageDescription}"
+                                                   Stretch="Uniform"
+                                                   Margin="8" />
+                                            <FontIcon Glyph="&#xE7F4;" FontSize="42"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                      Visibility="{Binding ProductImage, Converter={StaticResource NullToVisibilityConverter}}" />
                                         </Grid>
                                     </Border>
 

@@ -29,7 +29,6 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
-        _connection.HeartRateChanged += Connection_HeartRateChanged;
         _ = InitializeBluetoothLifecycleAsync();
         Closed += (_, _) =>
         {
@@ -332,15 +331,6 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record SavedWearable(string Name, string Id);
-
-    private void Connection_HeartRateChanged(object? sender, string message)
-    {
-        _dispatcherQueue.TryEnqueue(() =>
-        {
-            if (_connectedDeviceId is not null)
-                DiscoveryHint.Text = $"Connected to {_devices.GetValueOrDefault(_connectedDeviceId)?.Name ?? "your wearable"}. {message}";
-        });
-    }
 
     private void Discovery_DevicesChanged(object? sender, IReadOnlyList<WearableDevice> devices)
     {

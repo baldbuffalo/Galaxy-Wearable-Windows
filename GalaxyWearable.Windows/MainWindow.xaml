@@ -48,12 +48,15 @@
                 <TextBlock Text="GALAXY WEARABLE" FontSize="10" FontWeight="SemiBold"
                            CharacterSpacing="80"
                            Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                <TextBlock Text="Windows companion" FontSize="12"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button Content="Windows companion" FontSize="12"
+                        HorizontalAlignment="Left" Padding="0" MinWidth="0"
+                        Background="Transparent" BorderThickness="0"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Click="OpenUpdates_Click" />
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Column="1" Padding="32,28,32,24">
+        <Grid x:Name="MainPage" Grid.Column="1" Padding="32,28,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -167,6 +170,38 @@
                     </ListView.ItemTemplate>
                 </ListView>
             </Grid>
+        </Grid>
+
+        <Grid x:Name="UpdatesPage" Grid.Column="1" Padding="32,28,32,24"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <StackPanel Spacing="14">
+                <Button Content="&#xE72B;  Back to devices" Click="BackFromUpdates_Click"
+                        HorizontalAlignment="Left" />
+                <TextBlock Text="Software updates" FontSize="30" FontWeight="SemiBold" />
+                <TextBlock Text="Check whether a newer version of Galaxy Wearable for Windows is available."
+                           FontSize="14" TextWrapping="Wrap"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <Border Grid.Row="1" Margin="0,28,0,0" Padding="22" CornerRadius="12"
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="Updates" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock x:Name="UpdateStatusText"
+                               Text="Select Check for updates to compare this app with the latest release."
+                               TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <Button x:Name="CheckUpdatesButton" Content="Check for updates"
+                            Click="CheckUpdatesButton_Click" HorizontalAlignment="Left"
+                            MinHeight="40" />
+                </StackPanel>
+            </Border>
         </Grid>
     </Grid>
 </Window>

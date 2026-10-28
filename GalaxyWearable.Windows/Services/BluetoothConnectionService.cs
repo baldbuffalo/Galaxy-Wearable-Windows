@@ -246,22 +246,33 @@ public sealed class BluetoothConnectionService : IDisposable
 
         AddSapDiagnostic("• Sent the matching SAP capability response (opcode 0x15).");
 
-        if (_sapTransportMtu < 15 || _sapTransportMtu > 500)
+        // The smallest encoded WatchInfo frame is 17 bytes. The upper bound
+        // allows the common 512-byte SAP transport MTU plus a small BLE variation.
+        if (_sapTransportMtu < 17 || _sapTransportMtu > 517)
         {
-            AddSapDiagnostic("• The advertised SAP transport MTU is outside the supported 15–500 byte range; WatchInfo was not sent.");
+            AddSapDiagnostic("• The advertised SAP transport MTU is outside the supported 17–517 byte range; WatchInfo was not sent.");
             _sapHandshakeCompleted?.TrySetResult(true);
             return;
         }
 
-        // Read-only OOBE WatchInfo request (service 1, message 1). Do not send
-        // device-status, locale/time setup, or user-agreement messages here.
-        byte[] watchInfo = { 0x01, 0x04, 0x02, 0x00, 0x00, 0x00, 0x05, 0x00, 0x0e };
-        var frame = EncodeSapSingleFrame(1, watchInfo, _sapTransportMtu);
-        var watchInfoStatus = await WriteSapBytesAsync(frame);
-        _sapWatchInfoRequestSent = watchInfoStatus == GattCommunicationStatus.Success;
-        AddSapDiagnostic(_sapWatchInfoRequestSent
-            ? "• Sent read-only WatchInfo request; waiting for the band response."
-            : $"• WatchInfo request write failed: {watchInfoStatus}.");
+        try
+        {
+            // Read-only OOBE WatchInfo request (service 1, message 1). Do not send
+            // device-status, locale/time setup, or user-agreement messages here.
+            byte[] watchInfo = { 0x01, 0x04, 0x02, 0x00, 0x00, 0x00, 0x05, 0x00, 0x0e };
+            var frame = EncodeSapSingleFrame(1, watchInfo, _sapTransportMtu);
+            var watchInfoStatus = await WriteSapBytesAsync(frame);
+            _sapWatchInfoRequestSent = watchInfoStatus == GattCommunicationStatus.Success;
+            AddSapDiagnostic(_sapWatchInfoRequestSent
+                ? "• Sent read-only WatchInfo request; waiting for the band response."
+                : $"• WatchInfo request write failed: {watchInfoStatus}.");
+        }
+        catch (Exception ex)
+        {
+            AddSapDiagnostic($"• WatchInfo request could not be encoded or written: {ex.Message}");
+            _sapHandshakeCompleted?.TrySetResult(false);
+            return;
+        }
 
         _sapHandshakeCompleted?.TrySetResult(true);
     }

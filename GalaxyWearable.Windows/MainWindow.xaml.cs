@@ -419,11 +419,14 @@ public sealed partial class MainWindow : Window
     {
         if (sender.State != RadioState.On)
         {
+            _discovery.Stop();
             await _connection.DisconnectAsync();
             _dispatcherQueue.TryEnqueue(() =>
             {
+                ScanButton.Content = "Find devices";
+                ScanButton.IsEnabled = true;
                 _connectedDeviceId = null;
-                DiscoveryHint.Text = "Bluetooth is off. Your saved wearable will be reconnected when Bluetooth is on.";
+                DiscoveryHint.Text = "Bluetooth is off. Scanning stopped; your saved wearable will be retried when Bluetooth is on.";
             });
             return;
         }

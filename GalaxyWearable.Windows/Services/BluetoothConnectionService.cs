@@ -13,11 +13,7 @@ public sealed class BluetoothConnectionService : IDisposable
 {
     private BluetoothLEDevice? _device;
     private readonly List<GattDeviceService> _services = new();
-    private GattCharacteristic? _heartRateCharacteristic;
-    private bool _heartRateSubscribed;
-
     public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
-    public event EventHandler<string>? HeartRateChanged;
 
     public async Task<string> ConnectAndInspectAsync(string bluetoothAddress)
     {
@@ -58,24 +54,12 @@ public sealed class BluetoothConnectionService : IDisposable
             foreach (var characteristic in characteristicsResult.Characteristics)
             {
                 lines.Add($"  • {characteristic.Uuid} [{characteristic.CharacteristicProperties}]");
-                if (characteristic.Uuid == GattCharacteristicUuids.HeartRateMeasurement)
-                    _heartRateCharacteristic = characteristic;
             }
         }
 
         lines.Add("");
         lines.Add("Fit3 protocol assessment:");
         var serviceIds = _services.Select(service => service.Uuid).ToHashSet();
-        if (serviceIds.Contains(GattServiceUuids.HeartRate))
-        {
-            var notificationStatus = await StartHeartRateNotificationsAsync();
-            lines.Add($"• Standard, unbonded Heart Rate Profile: {notificationStatus}");
-        }
-        else
-        {
-            lines.Add("• Standard Heart Rate Profile (180D) was not exposed in this session.");
-        }
-
         if (serviceIds.Any(uuid => uuid == Guid.Parse("00001a1a-0000-1000-8000-00805f9b34fb")))
             lines.Add("• Samsung 1A1A service is visible; its documented streaming characteristic may require an existing Bluetooth bond.");
         if (serviceIds.Any(uuid => uuid == Guid.Parse("0000fd69-0000-1000-8000-00805f9b34fb")))
@@ -138,96 +122,14 @@ public sealed class BluetoothConnectionService : IDisposable
         return fields.Count == 0 ? "service present, no readable identity fields" : string.Join(", ", fields);
     }
 
-    public async Task<string> StartHeartRateNotificationsAsync()
-    {
-        if (_heartRateCharacteristic is null)
-            return "No standard Heart Rate Measurement characteristic (2A37) was found.";
-
-        _heartRateCharacteristic.ValueChanged -= OnHeartRateValueChanged;
-        var status = await _heartRateCharacteristic
-            .WriteClientCharacteristicConfigurationDescriptorAsync(
-                GattClientCharacteristicConfigurationDescriptorValue.Notify);
-
-        if (status != GattCommunicationStatus.Success)
-            return $"Could not subscribe to heart-rate notifications: {status}.";
-
-        _heartRateCharacteristic.ValueChanged += OnHeartRateValueChanged;
-        _heartRateSubscribed = true;
-        return "subscribed to standard heart-rate notifications (2A37); live samples depend on the watch currently publishing measurements.";
-    }
-
-    private void OnHeartRateValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
-    {
-        using var reader = DataReader.FromBuffer(args.CharacteristicValue);
-        if (reader.UnconsumedBufferLength < 2)
-            return;
-
-        var flags = reader.ReadByte();
-        var is16Bit = (flags & 0x01) != 0;
-        if (is16Bit && reader.UnconsumedBufferLength < 2)
-            return;
-
-        var bpm = is16Bit ? reader.ReadUInt16() : reader.ReadByte();
-        if (bpm == 0)
-            return;
-
-        // The Heart Rate Measurement flags define optional Energy Expended and
-        // RR-interval fields after the BPM value. Consume them safely so packets
-        // with optional fields are validated instead of silently misread.
-        if ((flags & 0x08) != 0)
-        {
-            if (reader.UnconsumedBufferLength < 2)
-                return;
-            _ = reader.ReadUInt16();
-        }
-
-        var rrIntervals = 0;
-        if ((flags & 0x10) != 0)
-        {
-            while (reader.UnconsumedBufferLength >= 2)
-            {
-                _ = reader.ReadUInt16();
-                rrIntervals++;
-            }
-        }
-
-        var contactSupported = (flags & 0x04) != 0;
-        var contactDetected = (flags & 0x02) != 0;
-        var contact = !contactSupported ? "contact status unavailable"
-            : contactDetected ? "sensor contact detected" : "sensor contact not detected";
-        var rr = rrIntervals > 0 ? $", {rrIntervals} RR interval(s)" : string.Empty;
-        HeartRateChanged?.Invoke(this, $"Heart rate: {bpm} BPM ({contact}{rr})");
-    }
-
     public async Task DisconnectAsync()
     {
-        if (_heartRateCharacteristic is not null)
-        {
-            _heartRateCharacteristic.ValueChanged -= OnHeartRateValueChanged;
-            if (_heartRateSubscribed)
-            {
-                try
-                {
-                    await _heartRateCharacteristic
-                        .WriteClientCharacteristicConfigurationDescriptorAsync(
-                            GattClientCharacteristicConfigurationDescriptorValue.None);
-                }
-                catch
-                {
-                    // Disconnect cleanup should continue if the peripheral has gone away.
-                }
-            }
-            _heartRateSubscribed = false;
-            _heartRateCharacteristic = null;
-        }
-
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();
 
         _device?.Dispose();
         _device = null;
-        _heartRateSubscribed = false;
     }
 
     public void Dispose()

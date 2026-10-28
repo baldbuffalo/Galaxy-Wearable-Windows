@@ -85,10 +85,57 @@ public sealed class BluetoothConnectionService : IDisposable
         if (_services.Any(service => service.Uuid.ToString().StartsWith("1b7e8251-", StringComparison.OrdinalIgnoreCase)))
             lines.Add("• A known Fit3 accessory-channel service family is visible; protected operations remain unimplemented.");
 
+        var identity = await ReadStandardDeviceIdentityAsync();
+        if (!string.IsNullOrWhiteSpace(identity))
+            lines.Add($"• Standard device information: {identity}");
+
         lines.Add("• This connection does not impersonate Samsung's phone app or alter the watch's existing phone pairing.");
         lines.Add("• Protected Samsung channels require protocol/key evidence; UUID discovery alone is not authentication.");
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private async Task<string?> ReadStandardDeviceIdentityAsync()
+    {
+        var service = _services.FirstOrDefault(item =>
+            item.Uuid == Guid.Parse("0000180a-0000-1000-8000-00805f9b34fb"));
+        if (service is null)
+            return null;
+
+        var result = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+        if (result.Status != GattCommunicationStatus.Success)
+            return $"service present; characteristic discovery returned {result.Status}";
+
+        var fields = new List<string>();
+        foreach (var characteristic in result.Characteristics)
+        {
+            var label = characteristic.Uuid == Guid.Parse("00002a29-0000-1000-8000-00805f9b34fb") ? "manufacturer"
+                : characteristic.Uuid == Guid.Parse("00002a24-0000-1000-8000-00805f9b34fb") ? "model"
+                : characteristic.Uuid == Guid.Parse("00002a26-0000-1000-8000-00805f9b34fb") ? "firmware"
+                : characteristic.Uuid == Guid.Parse("00002a28-0000-1000-8000-00805f9b34fb") ? "software"
+                : null;
+            if (label is null || (characteristic.CharacteristicProperties & GattCharacteristicProperties.Read) == 0)
+                continue;
+
+            try
+            {
+                var read = await characteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
+                if (read.Status != GattCommunicationStatus.Success || read.Value is null)
+                    continue;
+                using var reader = DataReader.FromBuffer(read.Value);
+                var bytes = new byte[reader.UnconsumedBufferLength];
+                reader.ReadBytes(bytes);
+                var value = System.Text.Encoding.UTF8.GetString(bytes).TrimEnd('\0', ' ', '\r', '\n');
+                if (!string.IsNullOrWhiteSpace(value))
+                    fields.Add($"{label} {value}");
+            }
+            catch
+            {
+                // Some standard identity fields may be unavailable without affecting BLE connection.
+            }
+        }
+
+        return fields.Count == 0 ? "service present, no readable identity fields" : string.Join(", ", fields);
     }
 
     public async Task<string> StartHeartRateNotificationsAsync()

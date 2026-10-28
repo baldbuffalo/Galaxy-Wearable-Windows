@@ -26,8 +26,8 @@ jobs:
           Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $installer
 
           & $installer -Version "10.0.403" -AzureFeed "https://dotnetcli.azureedge.net/dotnet" -InstallDir $installDir -NoPath
-          if ($LASTEXITCODE -ne 0) {
-            throw ".NET SDK installation failed with exit code $LASTEXITCODE."
+          if (!(Test-Path (Join-Path $installDir "dotnet.exe"))) {
+            throw ".NET SDK installer finished without creating dotnet.exe."
           }
 
           $sdk = Join-Path $installDir "dotnet.exe"

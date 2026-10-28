@@ -135,6 +135,8 @@ public sealed class BluetoothDiscoveryService : IDisposable
             System.Text.RegularExpressions.Regex.IsMatch(
                 normalized, @"SM-R(3\d{2}|600|7\d{2}|8\d{2}|9\d{2})",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(
+                normalized, @"SM-V7\d{2}", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             || normalized.Contains("SM-L7", StringComparison.OrdinalIgnoreCase);
 
         return brandAndType || watchBandModelCode;

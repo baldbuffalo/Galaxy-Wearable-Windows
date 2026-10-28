@@ -76,7 +76,11 @@ jobs:
             throw "Published executable not found at $publishedApp"
           }
 
-          $otherFiles = Get-ChildItem $publishDir -File -Recurse | Where-Object { $_.FullName -ne $publishedApp }
+          # Get-ChildItem returns absolute paths; normalize both sides before comparing.
+          $publishedAppFullPath = [System.IO.Path]::GetFullPath((Resolve-Path $publishedApp).Path)
+          $otherFiles = Get-ChildItem $publishDir -File -Recurse | Where-Object {
+            [System.IO.Path]::GetFullPath($_.FullName) -ine $publishedAppFullPath
+          }
           if ($otherFiles.Count -gt 0) {
             $otherFiles | ForEach-Object { Write-Host "Unexpected external file: $($_.FullName)" }
             throw "Single-file publish produced external files; refusing to publish an EXE that may be incomplete."

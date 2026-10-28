@@ -65,6 +65,10 @@ public sealed partial class MainWindow : Window
         UpdateStatusText.Text = "Checking for updates…";
         try
         {
+            if (!string.IsNullOrWhiteSpace(_pendingUpdatePath) && File.Exists(_pendingUpdatePath))
+                File.Delete(_pendingUpdatePath);
+            _pendingUpdatePath = null;
+
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Galaxy-Wearable-Windows-Updater");
             using var response = await client.GetAsync(

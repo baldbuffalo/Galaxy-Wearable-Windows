@@ -38,6 +38,14 @@ These are transport/discovery capabilities. A successful BLE connection is not t
 
 The app must not send guessed proprietary commands or claim phone-like pairing until the handshake is understood and validated against real devices. Standard BLE services can be useful without that proprietary pairing, but they do not reproduce the complete Samsung companion experience.
 
+## Findings from public protocol research (2026-10-28)
+
+The public Fit3Free capture reports that the Fit3 exposes the standard Heart Rate service (`180D` / `2A37`) without a bond. It also reports proprietary services including `1A1A`, `FD69`, and custom 128-bit services, with useful data characteristics on at least some channels requiring a bond. A service UUID being visible is not proof that its payload is usable.
+
+The Windows app now deliberately avoids calling Windows `PairAsync` from its device-selection flow and does not initiate Samsung's new-phone setup. It connects to the BLE address, enumerates visible services, and attempts to subscribe to the standard heart-rate measurement if available. This can provide a limited unbonded data path without changing the existing S26 pairing. It is **not** phone-protocol emulation: the authenticated Samsung accessory handshake, bond/key state, and proprietary message framing remain unknown and are not guessed. The app cannot reuse the S26's existing bond merely by connecting to the same Fit3; Bluetooth bond credentials are managed by each host's Bluetooth stack.
+
+A true compatible-phone implementation still needs a captured, authorized protocol trace and a complete understanding of the pairing/authentication exchange. We must not infer keys, replay unknown payloads, or write to proprietary characteristics based only on their UUIDs.
+
 ## Next validation steps
 
 1. Run the app with the Fit3 nearby and confirm its advertised name/address appears.

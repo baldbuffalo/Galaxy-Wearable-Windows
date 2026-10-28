@@ -34,6 +34,8 @@ public sealed partial class MainWindow : Window
         {
             _discovery.Dispose();
             _connection.Dispose();
+            if (_bluetoothRadio is not null)
+                _bluetoothRadio.StateChanged -= BluetoothRadio_StateChanged;
         };
     }
 
@@ -63,14 +65,23 @@ public sealed partial class MainWindow : Window
         UpdateStatusText.Text = "Checking for updates…";
         try
         {
-            using var client = new HttpClient();
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Galaxy-Wearable-Windows-Updater");
-            using var response = await client.GetAsync("https://api.github.com/repos/baldbuffalo/Galaxy-Wearable-Windows/releases/latest");
+            using var response = await client.GetAsync(
+                "https://api.github.com/repos/baldbuffalo/Galaxy-Wearable-Windows/releases/latest",
+                HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var asset = json.RootElement.GetProperty("assets").EnumerateArray()
-                .FirstOrDefault(x => string.Equals(x.GetProperty("name").GetString(), "GalaxyWearable.Windows.exe", StringComparison.OrdinalIgnoreCase));
-            var url = asset.ValueKind == JsonValueKind.Undefined ? null : asset.GetProperty("browser_download_url").GetString();
+            if (!json.RootElement.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("The latest GitHub release has no downloadable assets.");
+
+            var asset = assets.EnumerateArray()
+                .FirstOrDefault(x => x.TryGetProperty("name", out var name)
+                    && string.Equals(name.GetString(), "GalaxyWearable.Windows.exe", StringComparison.OrdinalIgnoreCase));
+            var url = asset.ValueKind == JsonValueKind.Undefined
+                || !asset.TryGetProperty("browser_download_url", out var urlElement)
+                ? null
+                : urlElement.GetString();
             var currentPath = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
             {
@@ -78,24 +89,57 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            using var latestResponse = await client.GetAsync(url);
-            latestResponse.EnsureSuccessStatusCode();
-            var bytes = await latestResponse.Content.ReadAsByteArrayAsync();
-            await using var current = File.OpenRead(currentPath);
-            var currentHash = await SHA256.HashDataAsync(current);
-            var latestHash = SHA256.HashData(bytes);
-            if (CryptographicOperations.FixedTimeEquals(currentHash, latestHash))
-            {
-                UpdateStatusText.Text = "You're using the latest version.";
-                return;
-            }
-
             var folder = Path.Combine(Path.GetTempPath(), "GalaxyWearableWindowsUpdate");
             Directory.CreateDirectory(folder);
-            _pendingUpdatePath = Path.Combine(folder, "GalaxyWearable.Windows.new.exe");
-            await File.WriteAllBytesAsync(_pendingUpdatePath, bytes);
-            UpdateStatusText.Text = "A new version is available.";
-            UpdateButton.Visibility = Visibility.Visible;
+            var downloadedPath = Path.Combine(folder, $"GalaxyWearable.Windows.{Guid.NewGuid():N}.download");
+            try
+            {
+                using var latestResponse = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                latestResponse.EnsureSuccessStatusCode();
+                const long maxInstallerBytes = 500L * 1024 * 1024;
+                if (latestResponse.Content.Headers.ContentLength is long contentLength
+                    && (contentLength < 10L * 1024 * 1024 || contentLength > maxInstallerBytes))
+                    throw new InvalidDataException($"The downloaded app size ({contentLength:N0} bytes) is outside the expected range.");
+
+                await using (var source = await latestResponse.Content.ReadAsStreamAsync())
+                await using (var destination = new FileStream(downloadedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 128, useAsync: true))
+                {
+                    await source.CopyToAsync(destination);
+                    await destination.FlushAsync();
+                }
+
+                var downloadedInfo = new FileInfo(downloadedPath);
+                if (downloadedInfo.Length < 10L * 1024 * 1024 || downloadedInfo.Length > maxInstallerBytes)
+                    throw new InvalidDataException($"The downloaded app size ({downloadedInfo.Length:N0} bytes) is outside the expected range.");
+
+                await using (var downloaded = File.OpenRead(downloadedPath))
+                {
+                    var header = new byte[2];
+                    if (await downloaded.ReadAsync(header) != 2 || header[0] != (byte)'M' || header[1] != (byte)'Z')
+                        throw new InvalidDataException("The release asset is not a valid Windows executable.");
+                }
+
+                await using var current = File.OpenRead(currentPath);
+                await using var latest = File.OpenRead(downloadedPath);
+                var currentHash = await SHA256.HashDataAsync(current);
+                var latestHash = await SHA256.HashDataAsync(latest);
+                if (CryptographicOperations.FixedTimeEquals(currentHash, latestHash))
+                {
+                    UpdateStatusText.Text = "You're using the latest version.";
+                    File.Delete(downloadedPath);
+                    return;
+                }
+
+                _pendingUpdatePath = Path.Combine(folder, "GalaxyWearable.Windows.new.exe");
+                File.Move(downloadedPath, _pendingUpdatePath, overwrite: true);
+                UpdateStatusText.Text = "A new version is available.";
+                UpdateButton.Visibility = Visibility.Visible;
+            }
+            finally
+            {
+                if (File.Exists(downloadedPath))
+                    File.Delete(downloadedPath);
+            }
         }
         catch (Exception ex)
         {
@@ -240,8 +284,8 @@ public sealed partial class MainWindow : Window
         {
             // Do not invoke Windows pairing or Samsung's new-phone setup flow. Open
             // the currently available BLE services only, preserving the existing S26 bond.
-            await SavePairedDeviceAsync(selected);
             var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id);
+            await SavePairedDeviceAsync(selected);
             _connectedDeviceId = selected.Id;
             DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed. {protocolReport}";
         }

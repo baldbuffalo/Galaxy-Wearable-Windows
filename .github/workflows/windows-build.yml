@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows-x64:
@@ -94,10 +94,24 @@ jobs:
             throw "Publish output contains nested ZIP files; expected loose app files only."
           }
 
-      - name: Upload Windows app files as one artifact
-        uses: actions/upload-artifact@v7.0.2
+      - name: Package complete Windows app for release
+        shell: pwsh
+        run: |
+          $publishDir = "dist/GalaxyWearable-Windows/win-x64"
+          $archive = "dist/Galaxy-Wearable-Windows.zip"
+          Compress-Archive -Path "$publishDir/*" -DestinationPath $archive -Force
+          if (!(Test-Path $archive)) {
+            throw "Release archive was not created."
+          }
+
+      - name: Publish GitHub release with direct executable
+        uses: softprops/action-gh-release@v2
         with:
-          name: Galaxy-Wearable-Windows
-          path: dist/GalaxyWearable-Windows/win-x64/
-          if-no-files-found: error
-          retention-days: 14
+          tag_name: build-${{ github.run_number }}
+          name: Galaxy Wearable Windows build ${{ github.run_number }}
+          target_commitish: main
+          make_latest: true
+          generate_release_notes: true
+          files: |
+            dist/GalaxyWearable-Windows/win-x64/GalaxyWearable.Windows.exe
+            dist/Galaxy-Wearable-Windows.zip

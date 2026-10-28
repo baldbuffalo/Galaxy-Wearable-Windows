@@ -14,6 +14,7 @@ public sealed class BluetoothConnectionService : IDisposable
     private BluetoothLEDevice? _device;
     private readonly List<GattDeviceService> _services = new();
     private GattCharacteristic? _heartRateCharacteristic;
+    private bool _heartRateSubscribed;
 
     public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
     public event EventHandler<string>? HeartRateChanged;
@@ -63,8 +64,29 @@ public sealed class BluetoothConnectionService : IDisposable
         }
 
         lines.Add("");
-        lines.Add("This is a BLE/GATT connection, not proof of Samsung companion pairing.");
-        lines.Add("Samsung-specific authenticated services are listed only when Windows allows discovery.");
+        lines.Add("Fit3 protocol assessment:");
+        var serviceIds = _services.Select(service => service.Uuid).ToHashSet();
+        if (serviceIds.Contains(GattServiceUuids.HeartRate))
+        {
+            var notificationStatus = await StartHeartRateNotificationsAsync();
+            lines.Add($"• Standard, unbonded Heart Rate Profile: {notificationStatus}");
+        }
+        else
+        {
+            lines.Add("• Standard Heart Rate Profile (180D) was not exposed in this session.");
+        }
+
+        if (serviceIds.Any(uuid => uuid == Guid.Parse("00001a1a-0000-1000-8000-00805f9b34fb")))
+            lines.Add("• Samsung 1A1A service is visible; its documented streaming characteristic may require an existing Bluetooth bond.");
+        if (serviceIds.Any(uuid => uuid == Guid.Parse("0000fd69-0000-1000-8000-00805f9b34fb")))
+            lines.Add("• Samsung FD69 service is visible; no proprietary writes are sent.");
+        if (_services.Any(service => service.Uuid.ToString().StartsWith("eedd5e73-", StringComparison.OrdinalIgnoreCase)))
+            lines.Add("• A known Fit3 crypto-handshake service family is visible. Its full handshake is not implemented; no guessed keys or payloads are sent.");
+        if (_services.Any(service => service.Uuid.ToString().StartsWith("1b7e8251-", StringComparison.OrdinalIgnoreCase)))
+            lines.Add("• A known Fit3 accessory-channel service family is visible; protected operations remain unimplemented.");
+
+        lines.Add("• This connection does not impersonate Samsung's phone app or alter the watch's existing phone pairing.");
+        lines.Add("• Protected Samsung channels require protocol/key evidence; UUID discovery alone is not authentication.");
 
         return string.Join(Environment.NewLine, lines);
     }
@@ -83,7 +105,8 @@ public sealed class BluetoothConnectionService : IDisposable
             return $"Could not subscribe to heart-rate notifications: {status}.";
 
         _heartRateCharacteristic.ValueChanged += OnHeartRateValueChanged;
-        return "Subscribed to standard heart-rate notifications (2A37), if the watch is currently publishing measurements.";
+        _heartRateSubscribed = true;
+        return "subscribed to standard heart-rate notifications (2A37); live samples depend on the watch currently publishing measurements.";
     }
 
     private void OnHeartRateValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
@@ -106,16 +129,20 @@ public sealed class BluetoothConnectionService : IDisposable
         if (_heartRateCharacteristic is not null)
         {
             _heartRateCharacteristic.ValueChanged -= OnHeartRateValueChanged;
-            try
+            if (_heartRateSubscribed)
             {
-                await _heartRateCharacteristic
-                    .WriteClientCharacteristicConfigurationDescriptorAsync(
-                        GattClientCharacteristicConfigurationDescriptorValue.None);
+                try
+                {
+                    await _heartRateCharacteristic
+                        .WriteClientCharacteristicConfigurationDescriptorAsync(
+                            GattClientCharacteristicConfigurationDescriptorValue.None);
+                }
+                catch
+                {
+                    // Disconnect cleanup should continue if the peripheral has gone away.
+                }
             }
-            catch
-            {
-                // Disconnect cleanup should continue if the peripheral has gone away.
-            }
+            _heartRateSubscribed = false;
             _heartRateCharacteristic = null;
         }
 
@@ -125,6 +152,7 @@ public sealed class BluetoothConnectionService : IDisposable
 
         _device?.Dispose();
         _device = null;
+        _heartRateSubscribed = false;
     }
 
     public void Dispose()

@@ -9,7 +9,7 @@ namespace GalaxyWearable.Windows.Services;
 /// Opens a BLE GATT connection and inspects services without pretending that
 /// a GATT connection completes Samsung's proprietary companion pairing flow.
 /// </summary>
-public sealed class BluetoothConnectionService : IDisposable
+public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
 {
     private BluetoothLEDevice? _device;
     private readonly List<GattDeviceService> _services = new();
@@ -23,6 +23,7 @@ public sealed class BluetoothConnectionService : IDisposable
     private int _sapTransportMtu;
     private int _sapHandshakeStarted;
     private bool _sapWatchInfoRequestSent;
+    private int _disposed;
 
     private static readonly Guid SapServiceUuid = Guid.Parse("00001a1a-0000-1000-8000-00805f9b34fb");
     private static readonly Guid SapNotifyUuid = Guid.Parse("797ae4e9-2e58-4fe8-b48d-b5c79599fb9b");
@@ -34,9 +35,11 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public async Task<string> ConnectAndInspectAsync(string bluetoothAddress, string? deviceInformationId = null)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await _sessionLock.WaitAsync();
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             return await ConnectAndInspectCoreAsync(bluetoothAddress, deviceInformationId);
         }
         finally
@@ -501,10 +504,14 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public async Task DisconnectAsync()
     {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+
         await _sessionLock.WaitAsync();
         try
         {
-            await DisconnectCoreAsync();
+            if (Volatile.Read(ref _disposed) == 0)
+                await DisconnectCoreAsync();
         }
         finally
         {
@@ -546,9 +553,34 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public void Dispose()
     {
-        // Window.Closed runs on the UI thread. Never synchronously wait on the
-        // async session semaphore here, because a pending WinRT await may need
-        // that same UI context to resume.
+        // Synchronous fallback for callers that cannot await disposal. The
+        // window uses DisposeAsync so active WinRT operations finish first.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        CleanupResources();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
+        // Do not dispose GATT services while an async connection/inspection is
+        // still using them. Waiting asynchronously avoids blocking the UI thread.
+        await _sessionLock.WaitAsync();
+        try
+        {
+            await DisconnectCoreAsync();
+        }
+        finally
+        {
+            _sessionLock.Release();
+        }
+    }
+
+    private void CleanupResources()
+    {
         if (_sapNotifyCharacteristic is not null)
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;

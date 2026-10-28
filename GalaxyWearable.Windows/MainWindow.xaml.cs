@@ -7,8 +7,6 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using global::Windows.Devices.Radios;
-using global::Windows.Devices.Enumeration;
-using global::Windows.Devices.Bluetooth;
 
 namespace GalaxyWearable.Windows;
 
@@ -31,6 +29,7 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
+        _connection.HeartRateChanged += Connection_HeartRateChanged;
         _ = InitializeBluetoothLifecycleAsync();
         Closed += (_, _) =>
         {
@@ -240,18 +239,17 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var pairingMessage = await PairThroughWindowsBluetoothAsync(selected);
-            // Save immediately after Windows pairing so the app remembers the device
-            // even if its first GATT connection is unavailable or exposes no services.
+            // Do not invoke Windows pairing or Samsung's new-phone setup flow. Open
+            // the currently available BLE services only, preserving the existing S26 bond.
             await SavePairedDeviceAsync(selected);
-            await _connection.ConnectAndInspectAsync(selected.Id);
+            var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id);
             _connectedDeviceId = selected.Id;
-            DiscoveryHint.Text = $"{pairingMessage} Connected to {selected.Name}. This device will be remembered for reconnection.";
+            DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed. {protocolReport}";
         }
         catch (Exception ex)
         {
             _connectedDeviceId = null;
-            DiscoveryHint.Text = $"Couldn't pair/connect to {selected.Name}. Make sure it is nearby and available. Details: {ex.Message}";
+            DiscoveryHint.Text = $"Couldn't open a BLE session to {selected.Name}. No new-phone setup was started. Details: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"BLE connection error: {ex}");
         }
         finally
@@ -260,51 +258,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-
-    private async Task<string> PairThroughWindowsBluetoothAsync(WearableDevice selected)
-    {
-        DeviceInformation? info = null;
-        if (!string.IsNullOrWhiteSpace(selected.DeviceInformationId))
-            info = await DeviceInformation.CreateFromIdAsync(selected.DeviceInformationId);
-
-        // Advertisement discovery may not include a Windows device ID. Resolve it
-        // from Windows' unpaired BLE device list by Bluetooth address.
-        if (info is null)
-        {
-            var candidates = await DeviceInformation.FindAllAsync(
-                BluetoothLEDevice.GetDeviceSelectorFromPairingState(false));
-            foreach (var candidate in candidates)
-            {
-                try
-                {
-                    using var device = await BluetoothLEDevice.FromIdAsync(candidate.Id);
-                    if (device is not null &&
-                        string.Equals(device.BluetoothAddress.ToString("X12"), selected.Id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        info = candidate;
-                        break;
-                    }
-                }
-                catch { }
-            }
-        }
-
-        if (info is null)
-            throw new InvalidOperationException("Windows couldn't resolve this device for Bluetooth pairing. Try finding it again in Windows Bluetooth settings.");
-
-        if (info.Pairing.IsPaired)
-            return "Already paired in Windows.";
-
-        if (!info.Pairing.CanPair)
-            throw new InvalidOperationException("Windows reports that this device cannot be paired through the standard Bluetooth pairing API.");
-
-        var result = await info.Pairing.PairAsync(global::Windows.Devices.Enumeration.DevicePairingProtectionLevel.None);
-        if (result.Status is global::Windows.Devices.Enumeration.DevicePairingResultStatus.Paired
-            or global::Windows.Devices.Enumeration.DevicePairingResultStatus.AlreadyPaired)
-            return "Paired through Windows Bluetooth.";
-
-        throw new InvalidOperationException($"Windows Bluetooth pairing did not complete: {result.Status}.");
-    }
 
     private async Task SavePairedDeviceAsync(WearableDevice device)
     {
@@ -379,6 +332,15 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record SavedWearable(string Name, string Id);
+
+    private void Connection_HeartRateChanged(object? sender, string message)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            if (_connectedDeviceId is not null)
+                DiscoveryHint.Text = $"Connected to {_devices.GetValueOrDefault(_connectedDeviceId)?.Name ?? "your wearable"}. {message}";
+        });
+    }
 
     private void Discovery_DevicesChanged(object? sender, IReadOnlyList<WearableDevice> devices)
     {

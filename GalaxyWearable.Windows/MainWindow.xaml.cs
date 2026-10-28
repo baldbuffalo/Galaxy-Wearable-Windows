@@ -378,10 +378,23 @@ public sealed partial class MainWindow : Window
             // Do not invoke Windows pairing or Samsung's new-phone setup flow. Open
             // the currently available BLE services only, preserving the existing S26 bond.
             var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id, selected.DeviceInformationId);
-            await SavePairedDeviceAsync(selected);
             _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? selected.Id;
             _connectionLostDeviceId = null;
-            DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed. {protocolReport}";
+
+            var saveWarning = string.Empty;
+            try
+            {
+                await SavePairedDeviceAsync(selected);
+            }
+            catch (Exception saveException)
+            {
+                // A settings-folder write failure must not misreport an active
+                // Bluetooth connection as failed or leave the user guessing.
+                saveWarning = " The connection is active, but automatic reconnect could not be saved.";
+                System.Diagnostics.Debug.WriteLine($"Saving the selected wearable failed: {saveException}");
+            }
+
+            DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed.{saveWarning} {protocolReport}";
         }
         catch (Exception ex)
         {
@@ -529,6 +542,12 @@ public sealed partial class MainWindow : Window
 
             if (!connected)
             {
+                // Disconnect events from an intentional session replacement can
+                // arrive after a new session to the same address has connected.
+                if (_connection.IsConnected
+                    && string.Equals(_connection.ConnectedBluetoothAddress, address, StringComparison.OrdinalIgnoreCase))
+                    return;
+
                 _connectedDeviceId = null;
                 _connectionLostDeviceId = address;
                 _isRefreshingDevices = true;
@@ -547,6 +566,9 @@ public sealed partial class MainWindow : Window
             if (_isClosed)
                 return;
 
+            // Reconcile against the service snapshot so expired BLE advertisements
+            // disappear from the UI instead of remaining indefinitely.
+            _devices.Clear();
             foreach (var device in devices)
                 _devices[device.Id] = device;
 

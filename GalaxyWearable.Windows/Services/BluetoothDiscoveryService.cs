@@ -103,7 +103,8 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
                         var displayName = string.IsNullOrWhiteSpace(device.Name) ? name : device.Name.Trim();
                         if (_devices.TryGetValue(device.BluetoothAddress, out var observed)
-                            && observed.SignalStrength is not null)
+                            && observed.SignalStrength is not null
+                            && DateTimeOffset.Now - observed.LastSeen < TimeSpan.FromSeconds(30))
                         {
                             // Keep live advertisement data (RSSI/connectability) instead
                             // of replacing it with weaker paired-device enumeration data.
@@ -168,6 +169,15 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
     private void PublishDevices()
     {
+        // BLE private addresses can rotate. Remove stale advertisement-only
+        // entries while retaining devices found in Windows' paired-device list.
+        var staleBefore = DateTimeOffset.Now - TimeSpan.FromMinutes(10);
+        foreach (var entry in _devices)
+        {
+            if (entry.Value.SignalStrength is not null && entry.Value.LastSeen < staleBefore)
+                _devices.TryRemove(entry.Key, out _);
+        }
+
         var snapshot = _devices.Values
             .OrderByDescending(device => device.LastSeen)
             .ToArray();

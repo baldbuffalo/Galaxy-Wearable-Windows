@@ -34,10 +34,14 @@ public sealed partial class MainWindow : Window
     }
 
 
-    private void OpenUpdates_Click(object sender, RoutedEventArgs e)
+    private string? _pendingUpdatePath;
+
+    private async void OpenUpdates_Click(object sender, RoutedEventArgs e)
     {
         MainPage.Visibility = Visibility.Collapsed;
         UpdatesPage.Visibility = Visibility.Visible;
+        if (UpdateStatusText.Text.StartsWith("Select Check", StringComparison.Ordinal))
+            await CheckForUpdatesAsync();
     }
 
     private void BackFromUpdates_Click(object sender, RoutedEventArgs e)
@@ -46,85 +50,104 @@ public sealed partial class MainWindow : Window
         MainPage.Visibility = Visibility.Visible;
     }
 
-    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
+    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync();
+
+    private async Task CheckForUpdatesAsync()
     {
         CheckUpdatesButton.IsEnabled = false;
-        UpdateStatusText.Text = "Checking the latest release and comparing SHA-256 hashes…";
-
+        UpdateButton.Visibility = Visibility.Collapsed;
+        UpdateStatusText.Text = "Checking for updates…";
         try
         {
             using var client = new HttpClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Galaxy-Wearable-Windows-Updater");
-            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-
-            using var releaseResponse = await client.GetAsync(
-                "https://api.github.com/repos/baldbuffalo/Galaxy-Wearable-Windows/releases/latest");
-            releaseResponse.EnsureSuccessStatusCode();
-
-            await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync();
-            using var releaseJson = await JsonDocument.ParseAsync(releaseStream);
-
-            var assets = releaseJson.RootElement.GetProperty("assets");
-            string? downloadUrl = null;
-            foreach (var asset in assets.EnumerateArray())
-            {
-                if (string.Equals(asset.GetProperty("name").GetString(),
-                                  "GalaxyWearable.Windows.exe",
-                                  StringComparison.OrdinalIgnoreCase))
-                {
-                    downloadUrl = asset.GetProperty("browser_download_url").GetString();
-                    break;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(downloadUrl))
-            {
-                UpdateStatusText.Text = "The latest GitHub release does not contain the app executable.";
-                return;
-            }
-
+            using var response = await client.GetAsync("https://api.github.com/repos/baldbuffalo/Galaxy-Wearable-Windows/releases/latest");
+            response.EnsureSuccessStatusCode();
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var asset = json.RootElement.GetProperty("assets").EnumerateArray()
+                .FirstOrDefault(x => string.Equals(x.GetProperty("name").GetString(), "GalaxyWearable.Windows.exe", StringComparison.OrdinalIgnoreCase));
+            var url = asset.ValueKind == JsonValueKind.Undefined ? null : asset.GetProperty("browser_download_url").GetString();
             var currentPath = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
             {
-                UpdateStatusText.Text = "Could not locate the running executable to calculate its SHA-256 hash.";
+                UpdateStatusText.Text = "Couldn't find the latest app download.";
                 return;
             }
 
-            var currentHash = await CalculateSha256Async(currentPath);
-            using var latestResponse = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            using var latestResponse = await client.GetAsync(url);
             latestResponse.EnsureSuccessStatusCode();
-            await using var latestStream = await latestResponse.Content.ReadAsStreamAsync();
-            var latestHashBytes = await SHA256.HashDataAsync(latestStream);
-            var latestHash = Convert.ToHexString(latestHashBytes);
+            var bytes = await latestResponse.Content.ReadAsByteArrayAsync();
+            await using var current = File.OpenRead(currentPath);
+            var currentHash = await SHA256.HashDataAsync(current);
+            var latestHash = SHA256.HashData(bytes);
+            if (CryptographicOperations.FixedTimeEquals(currentHash, latestHash))
+            {
+                UpdateStatusText.Text = "You're using the latest version.";
+                return;
+            }
 
-            if (string.Equals(currentHash, latestHash, StringComparison.OrdinalIgnoreCase))
-            {
-                UpdateStatusText.Text = $"You're up to date. SHA-256: {currentHash}";
-            }
-            else
-            {
-                UpdateStatusText.Text =
-                    $"A different build is available (release {releaseJson.RootElement.GetProperty("tag_name").GetString()}). " +
-                    $"The SHA-256 hashes differ.\nInstalled: {currentHash}\nLatest: {latestHash}\n" +
-                    "This check does not install the update automatically.";
-            }
+            var folder = Path.Combine(Path.GetTempPath(), "GalaxyWearableWindowsUpdate");
+            Directory.CreateDirectory(folder);
+            _pendingUpdatePath = Path.Combine(folder, "GalaxyWearable.Windows.new.exe");
+            await File.WriteAllBytesAsync(_pendingUpdatePath, bytes);
+            UpdateStatusText.Text = "A new version is available.";
+            UpdateButton.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
             UpdateStatusText.Text = $"Couldn't check for updates: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"Update check error: {ex}");
         }
-        finally
-        {
-            CheckUpdatesButton.IsEnabled = true;
-        }
+        finally { CheckUpdatesButton.IsEnabled = true; }
     }
 
-    private static async Task<string> CalculateSha256Async(string path)
+    private void UpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        await using var stream = File.OpenRead(path);
-        var hash = await SHA256.HashDataAsync(stream);
-        return Convert.ToHexString(hash);
+        if (string.IsNullOrWhiteSpace(_pendingUpdatePath) || !File.Exists(_pendingUpdatePath))
+        {
+            UpdateStatusText.Text = "Check for updates again before installing.";
+            UpdateButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var currentPath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
+        {
+            UpdateStatusText.Text = "Couldn't locate the app executable.";
+            return;
+        }
+
+        try
+        {
+            var scriptPath = Path.Combine(Path.GetTempPath(), $"GalaxyWearableUpdate-{Guid.NewGuid():N}.ps1");
+            File.WriteAllText(scriptPath, """
+                param([int]$ProcessId, [string]$CurrentPath, [string]$DownloadedPath, [string]$ScriptPath)
+                $ErrorActionPreference = 'Stop'
+                while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }
+                try {
+                    Copy-Item -LiteralPath $DownloadedPath -Destination $CurrentPath -Force
+                    Start-Process -FilePath $CurrentPath
+                } catch {
+                    Add-Type -AssemblyName PresentationFramework
+                    [System.Windows.MessageBox]::Show("Update installation failed. Try moving the app to a writable folder. $($_.Exception.Message)", "Galaxy Wearable update")
+                } finally {
+                    Remove-Item -LiteralPath $DownloadedPath -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $ScriptPath -Force -ErrorAction SilentlyContinue
+                }
+                """);
+            var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe")
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+            };
+            foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
+                "-ProcessId", Environment.ProcessId.ToString(), "-CurrentPath", currentPath,
+                "-DownloadedPath", _pendingUpdatePath, "-ScriptPath", scriptPath })
+                psi.ArgumentList.Add(arg);
+            System.Diagnostics.Process.Start(psi);
+            UpdateStatusText.Text = "Installing update and restarting…";
+            Application.Current.Exit();
+        }
+        catch (Exception ex) { UpdateStatusText.Text = $"Couldn't start installer: {ex.Message}"; }
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)

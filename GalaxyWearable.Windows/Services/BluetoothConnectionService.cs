@@ -527,10 +527,10 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public void Dispose()
     {
-        _sessionLock.Wait();
-        try
-        {
-            if (_sapNotifyCharacteristic is not null)
+        // Window.Closed runs on the UI thread. Never synchronously wait on the
+        // async session semaphore here, because a pending WinRT await may need
+        // that same UI context to resume.
+        if (_sapNotifyCharacteristic is not null)
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;
         _sapWriteCharacteristic = null;
@@ -538,21 +538,16 @@ public sealed class BluetoothConnectionService : IDisposable
         _sapResponseReceived?.TrySetCanceled();
         _sapHandshakeCompleted = null;
         _sapResponseReceived = null;
+
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();
-            if (_device is not null)
-            {
-                _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
-                _device.Dispose();
-                _device = null;
-            }
-        }
-        finally
+
+        if (_device is not null)
         {
-            // The window can be closing while an async BLE callback is still
-            // finishing. Keep the semaphores alive for any queued continuations.
-            _sessionLock.Release();
+            _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
+            _device.Dispose();
+            _device = null;
         }
     }
 }

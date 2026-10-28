@@ -70,7 +70,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            _discovery.Start();
+            await _discovery.StartAsync();
 
             if (_discovery.IsScanning)
             {
@@ -83,10 +83,11 @@ public sealed partial class MainWindow : Window
                 DiscoveryHint.Text = "Bluetooth scanning could not be started.";
             }
         }
-        catch
+        catch (Exception ex)
         {
             ScanButton.Content = "Find devices";
-            DiscoveryHint.Text = "Bluetooth scanning is currently unavailable.";
+            DiscoveryHint.Text = $"Could not start Bluetooth scanning: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Bluetooth scan start error: {ex}");
         }
         finally
         {

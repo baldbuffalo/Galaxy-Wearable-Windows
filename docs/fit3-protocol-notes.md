@@ -24,7 +24,8 @@ The general-purpose Windows app uses shared BLE discovery, connection, and GATT 
 1. **Discovery:** listens for BLE advertisements and filters for likely Samsung wearables using generic advertised names and standard metadata.
 2. **Connection:** opens the selected BLE device through Windows' Bluetooth LE APIs.
 3. **GATT inspection:** requests the live service list and characteristic properties and shows them in the app.
-4. **Standard heart-rate path:** can subscribe to the standard `2A37` notification characteristic when it is exposed and the watch is publishing measurements.
+4. **Standard heart-rate path:** can subscribe to the standard `2A37` notification characteristic when it is exposed and the watch is publishing measurements. Notifications decode the standard flags, sensor-contact bits, optional energy-expended field, and RR-interval count.
+5. **Standard identity fields:** reads readable manufacturer, model, firmware, and software fields from `180A` when the device exposes them. These fields may be placeholders or unavailable on some wearables.
 
 These are transport/discovery capabilities. A successful BLE connection is not the same thing as a Samsung watch believing this PC is an authenticated Galaxy Wearable phone.
 

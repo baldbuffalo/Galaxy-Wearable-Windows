@@ -9,7 +9,6 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Windows-style navigation rail -->
         <Grid Grid.Column="0" Background="{ThemeResource NavigationViewDefaultPaneBackground}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -38,38 +37,9 @@
                             <ColumnDefinition Width="24" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE773;" FontSize="16"
-                                  VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="Devices" FontWeight="SemiBold"
+                        <FontIcon Glyph="&#xE773;" FontSize="16" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="My devices" FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
-                    </Grid>
-                </Border>
-                <Border CornerRadius="6" Padding="12,10">
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="24" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE9D9;" FontSize="16"
-                                  VerticalAlignment="Center"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Grid.Column="1" Text="Device activity"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    </Grid>
-                </Border>
-                <Border CornerRadius="6" Padding="12,10">
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="24" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE713;" FontSize="16"
-                                  VerticalAlignment="Center"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Grid.Column="1" Text="Settings"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </Grid>
                 </Border>
             </StackPanel>
@@ -83,13 +53,11 @@
             </StackPanel>
         </Grid>
 
-        <!-- Main Windows app surface -->
         <Grid Grid.Column="1" Padding="32,28,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0" ColumnSpacing="16" Margin="0,0,0,26">
@@ -98,13 +66,13 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Spacing="5" VerticalAlignment="Center">
-                    <TextBlock Text="Devices" FontSize="30" FontWeight="SemiBold" />
-                    <TextBlock Text="Connect to your Samsung Galaxy watch or band."
+                    <TextBlock Text="My devices" FontSize="30" FontWeight="SemiBold" />
+                    <TextBlock Text="Your Samsung Galaxy watches and bands."
                                FontSize="14"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap" />
                 </StackPanel>
-                <Button x:Name="ScanButton" Grid.Column="1" Content="Scan for devices"
+                <Button x:Name="ScanButton" Grid.Column="1" Content="Find devices"
                         Click="ScanButton_Click" VerticalAlignment="Center"
                         MinHeight="38" />
             </Grid>
@@ -113,7 +81,7 @@
                     BorderThickness="1"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    Margin="0,0,0,18">
+                    Margin="0,0,0,20">
                 <Grid ColumnSpacing="14">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="40" />
@@ -125,10 +93,9 @@
                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                        <TextBlock Text="Nearby Bluetooth devices" FontSize="15"
-                                   FontWeight="SemiBold" />
+                        <TextBlock Text="Nearby devices" FontSize="15" FontWeight="SemiBold" />
                         <TextBlock x:Name="DiscoveryHint"
-                                   Text="Start scanning to discover nearby Samsung wearables."
+                                   Text="Choose Find devices to look for nearby Samsung wearables."
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    TextWrapping="Wrap" />
                     </StackPanel>
@@ -140,97 +107,82 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Grid ColumnSpacing="12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Available devices" FontSize="18" FontWeight="SemiBold"
-                               VerticalAlignment="Center" />
-                    <Button x:Name="ConnectButton" Grid.Column="1" Content="Connect"
-                            Click="ConnectButton_Click" IsEnabled="True" />
-                </Grid>
+                <TextBlock Text="Available wearables" FontSize="18" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
 
-                <ListView x:Name="DevicesList" Grid.Row="1" SelectionMode="Single"
+                <ListView x:Name="DevicesList" Grid.Row="1"
+                          SelectionMode="Single"
+                          SelectionChanged="DevicesList_SelectionChanged"
                           Background="Transparent"
                           BorderThickness="0"
                           Padding="0,8,0,0">
                     <ListView.ItemTemplate>
                         <DataTemplate>
-                            <Border Padding="16" Margin="0,0,0,8" CornerRadius="8"
+                            <Border Padding="18" Margin="0,0,0,12" CornerRadius="12"
                                     BorderThickness="1"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                                <Grid ColumnSpacing="16">
+                                <Grid ColumnSpacing="22">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="44" />
+                                        <ColumnDefinition Width="148" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Width="44" Height="44" CornerRadius="10"
-                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}">
-                                        <FontIcon Glyph="&#xE7F4;" FontSize="22"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center" />
+
+                                    <!-- Stylised wearable illustration, kept local and resolution-independent -->
+                                    <Border Width="136" Height="156" CornerRadius="10"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Grid>
+                                            <Border Width="42" Height="132" CornerRadius="12"
+                                                    Background="#FF34363B"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center" />
+                                            <Border Width="66" Height="78" CornerRadius="19"
+                                                    Background="#FF17191D"
+                                                    BorderBrush="#FF777B83" BorderThickness="2"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center">
+                                                <Grid>
+                                                    <Border Margin="7" CornerRadius="13"
+                                                            Background="#FF242832" />
+                                                    <StackPanel VerticalAlignment="Center"
+                                                                HorizontalAlignment="Center"
+                                                                Spacing="5">
+                                                        <TextBlock Text="10:08" FontSize="15"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="White" />
+                                                        <Border Width="28" Height="3" CornerRadius="2"
+                                                                Background="#FF6E9BFF" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </Grid>
                                     </Border>
-                                    <StackPanel Grid.Column="1" Spacing="4"
+
+                                    <StackPanel Grid.Column="1" Spacing="7"
                                                 VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" FontSize="15"
-                                                   FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Address}" FontSize="12"
+                                        <TextBlock Text="{Binding Name}" FontSize="20"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="Samsung Galaxy wearable"
+                                                   FontSize="13"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         <TextBlock Text="{Binding ConnectableText}" FontSize="12"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Spacing="5"
-                                                VerticalAlignment="Center"
-                                                HorizontalAlignment="Right">
                                         <TextBlock Text="{Binding SignalText}" FontSize="12"
-                                                   HorizontalAlignment="Right" />
-                                        <FontIcon Glyph="&#xE701;" FontSize="14"
-                                                  HorizontalAlignment="Right"
-                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
+
+                                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="18"
+                                              VerticalAlignment="Center"
+                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
             </Grid>
-
-            <Border Grid.Row="3" Margin="0,18,0,0" Padding="18"
-                    CornerRadius="8" BorderThickness="1"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                <StackPanel Spacing="12">
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="Connection details" FontSize="16"
-                                       FontWeight="SemiBold" />
-                            <TextBlock x:Name="ConnectionHint"
-                                       Text="Select a discovered Samsung wearable to inspect its available services."
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                        <Button x:Name="HeartRateButton" Grid.Column="1"
-                                Content="Enable heart rate"
-                                Click="HeartRateButton_Click"
-                                VerticalAlignment="Center" />
-                    </Grid>
-                    <TextBlock Text="Heart-rate notifications are available only when the device exposes the standard Bluetooth LE heart-rate service. This is not full Samsung phone pairing."
-                               FontSize="12"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap" />
-                    <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
-                        <TextBlock x:Name="GattDetails" FontFamily="Cascadia Mono, Consolas"
-                                   FontSize="12" TextWrapping="Wrap" />
-                    </ScrollViewer>
-                </StackPanel>
-            </Border>
         </Grid>
     </Grid>
 </Window>

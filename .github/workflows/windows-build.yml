@@ -55,7 +55,7 @@ jobs:
           /property:Configuration=Release
           /property:RuntimeIdentifier=win-x64
           /property:SelfContained=true
-          /property:PublishSingleFile=false
+          /property:PublishSingleFile=true
           /property:IncludeAllContentForSelfExtract=true
           /property:IncludeNativeLibrariesForSelfExtract=true
           /property:PublishDir=../dist/GalaxyWearable-Windows/win-x64/
@@ -67,41 +67,19 @@ jobs:
           /property:PublishAot=false
           /property:PublishReadyToRun=false
 
-      - name: Verify loose-file publish
+      - name: Verify single-file executable
         shell: pwsh
         run: |
           $publishDir = "dist/GalaxyWearable-Windows/win-x64"
           $publishedApp = Join-Path $publishDir "GalaxyWearable.Windows.exe"
           if (!(Test-Path $publishedApp)) {
-            throw "Published app not found at $publishedApp"
+            throw "Published executable not found at $publishedApp"
           }
 
-          $looseDlls = Get-ChildItem $publishDir -Filter "*.dll" -File
-          if ($looseDlls.Count -eq 0) {
-            throw "Expected supporting DLLs beside the executable, but none were found."
-          }
-
-          $xamlDll = Get-ChildItem $publishDir -Filter "Microsoft.UI.Xaml.dll" -Recurse -File
-          if ($xamlDll.Count -eq 0) {
-            throw "Microsoft.UI.Xaml.dll was not found in the publish output."
-          }
-
-      - name: Verify no nested ZIP files
-        shell: pwsh
-        run: |
-          $nestedZips = Get-ChildItem "dist/GalaxyWearable-Windows/win-x64" -Filter "*.zip" -Recurse -File
-          if ($nestedZips.Count -gt 0) {
-            throw "Publish output contains nested ZIP files; expected loose app files only."
-          }
-
-      - name: Package complete Windows app for release
-        shell: pwsh
-        run: |
-          $publishDir = "dist/GalaxyWearable-Windows/win-x64"
-          $archive = "dist/Galaxy-Wearable-Windows.zip"
-          Compress-Archive -Path "$publishDir/*" -DestinationPath $archive -Force
-          if (!(Test-Path $archive)) {
-            throw "Release archive was not created."
+          $otherFiles = Get-ChildItem $publishDir -File -Recurse | Where-Object { $_.FullName -ne $publishedApp }
+          if ($otherFiles.Count -gt 0) {
+            $otherFiles | ForEach-Object { Write-Host "Unexpected external file: $($_.FullName)" }
+            throw "Single-file publish produced external files; refusing to publish an EXE that may be incomplete."
           }
 
       - name: Publish GitHub release with direct executable
@@ -114,4 +92,3 @@ jobs:
           generate_release_notes: true
           files: |
             dist/GalaxyWearable-Windows/win-x64/GalaxyWearable.Windows.exe
-            dist/Galaxy-Wearable-Windows.zip

@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
     private string? _connectionLostDeviceId;
     private Radio? _bluetoothRadio;
     private bool _isRestoringConnection;
+    private bool _isClosed;
     private string SavedDevicePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GalaxyWearableWindows", "paired-device.json");
 
     public MainWindow()
@@ -34,6 +35,7 @@ public sealed partial class MainWindow : Window
         _ = InitializeBluetoothLifecycleAsync();
         Closed += (_, _) =>
         {
+            _isClosed = true;
             _discovery.DevicesChanged -= Discovery_DevicesChanged;
             _connection.ConnectionStateChanged -= Connection_ConnectionStateChanged;
             if (_bluetoothRadio is not null)
@@ -402,11 +404,15 @@ public sealed partial class MainWindow : Window
         try
         {
             var radios = await Radio.GetRadiosAsync();
-            _bluetoothRadio = radios.FirstOrDefault(radio => radio.Kind == RadioKind.Bluetooth);
+            var radio = radios.FirstOrDefault(item => item.Kind == RadioKind.Bluetooth);
+            if (_isClosed)
+                return;
+
+            _bluetoothRadio = radio;
             if (_bluetoothRadio is not null)
                 _bluetoothRadio.StateChanged += BluetoothRadio_StateChanged;
 
-            if (_bluetoothRadio?.State == RadioState.On)
+            if (!_isClosed && _bluetoothRadio?.State == RadioState.On)
                 await RestoreSavedDeviceAsync();
         }
         catch (Exception ex)
@@ -417,23 +423,43 @@ public sealed partial class MainWindow : Window
 
     private async void BluetoothRadio_StateChanged(Radio sender, object args)
     {
-        if (sender.State != RadioState.On)
+        try
         {
-            _discovery.Stop();
-            await _connection.DisconnectAsync();
-            _dispatcherQueue.TryEnqueue(() =>
-            {
-                ScanButton.Content = "Find devices";
-                ScanButton.IsEnabled = true;
-                _connectedDeviceId = null;
-                DiscoveryHint.Text = "Bluetooth is off. Scanning stopped; your saved wearable will be retried when Bluetooth is on.";
-            });
-            return;
-        }
+            if (_isClosed)
+                return;
 
-        await Task.Delay(1200);
-        if (sender.State == RadioState.On)
-            await RestoreSavedDeviceAsync();
+            if (sender.State != RadioState.On)
+            {
+                _discovery.Stop();
+                try
+                {
+                    await _connection.DisconnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Disconnect after Bluetooth radio change failed: {ex}");
+                }
+
+                _dispatcherQueue.TryEnqueue(() =>
+                {
+                    if (_isClosed)
+                        return;
+                    ScanButton.Content = "Find devices";
+                    ScanButton.IsEnabled = true;
+                    _connectedDeviceId = null;
+                    DiscoveryHint.Text = "Bluetooth is off. Scanning stopped; your saved wearable will be retried when Bluetooth is on.";
+                });
+                return;
+            }
+
+            await Task.Delay(1200);
+            if (!_isClosed && sender.State == RadioState.On)
+                await RestoreSavedDeviceAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Bluetooth radio state handler failed: {ex}");
+        }
     }
 
     private async Task RestoreSavedDeviceAsync()

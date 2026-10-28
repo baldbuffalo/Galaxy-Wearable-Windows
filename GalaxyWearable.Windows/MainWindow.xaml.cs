@@ -33,7 +33,7 @@ public sealed partial class MainWindow : Window
         _discovery.DevicesChanged += Discovery_DevicesChanged;
         _connection.ConnectionStateChanged += Connection_ConnectionStateChanged;
         _ = InitializeBluetoothLifecycleAsync();
-        Closed += (_, _) =>
+        Closed += async (_, _) =>
         {
             _isClosed = true;
             _discovery.DevicesChanged -= Discovery_DevicesChanged;
@@ -41,7 +41,16 @@ public sealed partial class MainWindow : Window
             if (_bluetoothRadio is not null)
                 _bluetoothRadio.StateChanged -= BluetoothRadio_StateChanged;
             _discovery.Dispose();
-            _connection.Dispose();
+
+            try
+            {
+                await _connection.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"BLE shutdown cleanup failed: {ex}");
+                _connection.Dispose();
+            }
         };
     }
 

@@ -31,6 +31,7 @@ public sealed class BluetoothConnectionService : IDisposable
     public event Action<string, bool>? ConnectionStateChanged;
 
     public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public string? ConnectedBluetoothAddress => _device?.BluetoothAddress.ToString("X12");
 
     public async Task<string> ConnectAndInspectAsync(string bluetoothAddress, string? deviceInformationId = null)
     {

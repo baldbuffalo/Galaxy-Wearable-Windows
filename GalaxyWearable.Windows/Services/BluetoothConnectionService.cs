@@ -550,9 +550,9 @@ public sealed class BluetoothConnectionService : IDisposable
         }
         finally
         {
+            // The window can be closing while an async BLE callback is still
+            // finishing. Keep the semaphores alive for any queued continuations.
             _sessionLock.Release();
-            _sessionLock.Dispose();
-            _sapWriteLock.Dispose();
         }
     }
 }

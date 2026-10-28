@@ -117,11 +117,39 @@ public sealed class BluetoothConnectionService : IDisposable
 
         var flags = reader.ReadByte();
         var is16Bit = (flags & 0x01) != 0;
-        var bpm = is16Bit && reader.UnconsumedBufferLength >= 2
-            ? reader.ReadUInt16()
-            : reader.ReadByte();
+        if (is16Bit && reader.UnconsumedBufferLength < 2)
+            return;
 
-        HeartRateChanged?.Invoke(this, $"Heart rate: {bpm} BPM");
+        var bpm = is16Bit ? reader.ReadUInt16() : reader.ReadByte();
+        if (bpm == 0)
+            return;
+
+        // The Heart Rate Measurement flags define optional Energy Expended and
+        // RR-interval fields after the BPM value. Consume them safely so packets
+        // with optional fields are validated instead of silently misread.
+        if ((flags & 0x08) != 0)
+        {
+            if (reader.UnconsumedBufferLength < 2)
+                return;
+            _ = reader.ReadUInt16();
+        }
+
+        var rrIntervals = 0;
+        if ((flags & 0x10) != 0)
+        {
+            while (reader.UnconsumedBufferLength >= 2)
+            {
+                _ = reader.ReadUInt16();
+                rrIntervals++;
+            }
+        }
+
+        var contactSupported = (flags & 0x04) != 0;
+        var contactDetected = (flags & 0x02) != 0;
+        var contact = !contactSupported ? "contact status unavailable"
+            : contactDetected ? "sensor contact detected" : "sensor contact not detected";
+        var rr = rrIntervals > 0 ? $", {rrIntervals} RR interval(s)" : string.Empty;
+        HeartRateChanged?.Invoke(this, $"Heart rate: {bpm} BPM ({contact}{rr})");
     }
 
     public async Task DisconnectAsync()

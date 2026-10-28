@@ -41,6 +41,8 @@ public sealed partial class MainWindow : Window
 
 
     private string? _pendingUpdatePath;
+    private string? _pendingUpdateUrl;
+    private string? _pendingUpdateSha256;
 
     private async void OpenUpdates_Click(object sender, RoutedEventArgs e)
     {
@@ -68,99 +70,74 @@ public sealed partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(_pendingUpdatePath) && File.Exists(_pendingUpdatePath))
                 File.Delete(_pendingUpdatePath);
             _pendingUpdatePath = null;
+            _pendingUpdateUrl = null;
+            _pendingUpdateSha256 = null;
 
-            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Galaxy-Wearable-Windows-Updater");
             using var response = await client.GetAsync(
                 "https://api.github.com/repos/baldbuffalo/Galaxy-Wearable-Windows/releases/latest",
                 HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+            var tag = json.RootElement.TryGetProperty("tag_name", out var tagElement)
+                ? tagElement.GetString()
+                : null;
+            if (tag is null
+                || !tag.StartsWith("build-", StringComparison.OrdinalIgnoreCase)
+                || !int.TryParse(tag.AsSpan("build-".Length), out var releaseBuild))
+                throw new InvalidDataException("The latest release has an unexpected version tag.");
+
+            var currentBuild = typeof(MainWindow).Assembly.GetName().Version?.Build ?? 0;
+            if (releaseBuild <= currentBuild)
+            {
+                UpdateStatusText.Text = "You're using the latest version.";
+                return;
+            }
+
             if (!json.RootElement.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
                 throw new InvalidDataException("The latest GitHub release has no downloadable assets.");
 
             var asset = assets.EnumerateArray()
                 .FirstOrDefault(x => x.TryGetProperty("name", out var name)
                     && string.Equals(name.GetString(), "GalaxyWearable.Windows.exe", StringComparison.OrdinalIgnoreCase));
-            var url = asset.ValueKind == JsonValueKind.Undefined
+            if (asset.ValueKind == JsonValueKind.Undefined
                 || !asset.TryGetProperty("browser_download_url", out var urlElement)
-                ? null
-                : urlElement.GetString();
-            var currentPath = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
+                || string.IsNullOrWhiteSpace(urlElement.GetString()))
+                throw new InvalidDataException("The latest release has no GalaxyWearable.Windows.exe asset.");
+
+            _pendingUpdateUrl = urlElement.GetString();
+            if (asset.TryGetProperty("digest", out var digestElement))
             {
-                UpdateStatusText.Text = "Couldn't find the latest app download.";
-                return;
+                var digest = digestElement.GetString();
+                if (!string.IsNullOrWhiteSpace(digest) && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                    _pendingUpdateSha256 = digest["sha256:".Length..];
             }
 
-            var folder = Path.Combine(Path.GetTempPath(), "GalaxyWearableWindowsUpdate");
-            Directory.CreateDirectory(folder);
-            var downloadedPath = Path.Combine(folder, $"GalaxyWearable.Windows.{Guid.NewGuid():N}.download");
-            try
-            {
-                using var latestResponse = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                latestResponse.EnsureSuccessStatusCode();
-                const long maxInstallerBytes = 500L * 1024 * 1024;
-                if (latestResponse.Content.Headers.ContentLength is long contentLength
-                    && (contentLength < 10L * 1024 * 1024 || contentLength > maxInstallerBytes))
-                    throw new InvalidDataException($"The downloaded app size ({contentLength:N0} bytes) is outside the expected range.");
-
-                await using (var source = await latestResponse.Content.ReadAsStreamAsync())
-                await using (var destination = new FileStream(downloadedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 128, useAsync: true))
-                {
-                    await source.CopyToAsync(destination);
-                    await destination.FlushAsync();
-                }
-
-                var downloadedInfo = new FileInfo(downloadedPath);
-                if (downloadedInfo.Length < 10L * 1024 * 1024 || downloadedInfo.Length > maxInstallerBytes)
-                    throw new InvalidDataException($"The downloaded app size ({downloadedInfo.Length:N0} bytes) is outside the expected range.");
-
-                await using (var downloaded = File.OpenRead(downloadedPath))
-                {
-                    var header = new byte[2];
-                    if (await downloaded.ReadAsync(header) != 2 || header[0] != (byte)'M' || header[1] != (byte)'Z')
-                        throw new InvalidDataException("The release asset is not a valid Windows executable.");
-                }
-
-                await using var current = File.OpenRead(currentPath);
-                await using var latest = File.OpenRead(downloadedPath);
-                var currentHash = await SHA256.HashDataAsync(current);
-                var latestHash = await SHA256.HashDataAsync(latest);
-                if (CryptographicOperations.FixedTimeEquals(currentHash, latestHash))
-                {
-                    UpdateStatusText.Text = "You're using the latest version.";
-                    File.Delete(downloadedPath);
-                    return;
-                }
-
-                _pendingUpdatePath = Path.Combine(folder, "GalaxyWearable.Windows.new.exe");
-                File.Move(downloadedPath, _pendingUpdatePath, overwrite: true);
-                UpdateStatusText.Text = "A new version is available.";
-                UpdateButton.Visibility = Visibility.Visible;
-            }
-            finally
-            {
-                if (File.Exists(downloadedPath))
-                    File.Delete(downloadedPath);
-            }
+            UpdateStatusText.Text = $"Build {releaseBuild} is available. Select Update now to download and install it.";
+            UpdateButton.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
             UpdateStatusText.Text = $"Couldn't check for updates: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"Update check error: {ex}");
         }
-        finally { CheckUpdatesButton.IsEnabled = true; }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
+        }
     }
 
-    private void UpdateButton_Click(object sender, RoutedEventArgs e)
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_pendingUpdatePath) || !File.Exists(_pendingUpdatePath))
+        if (string.IsNullOrWhiteSpace(_pendingUpdateUrl))
         {
             UpdateStatusText.Text = "Check for updates again before installing.";
             UpdateButton.Visibility = Visibility.Collapsed;
             return;
         }
+
         var currentPath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
         {
@@ -168,8 +145,56 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        UpdateButton.IsEnabled = false;
+        CheckUpdatesButton.IsEnabled = false;
+        UpdateStatusText.Text = "Downloading update… the app package is large, so this may take a while.";
+        string? temporaryDownload = null;
         try
         {
+            const long maxInstallerBytes = 500L * 1024 * 1024;
+            var folder = Path.Combine(Path.GetTempPath(), "GalaxyWearableWindowsUpdate");
+            Directory.CreateDirectory(folder);
+            temporaryDownload = Path.Combine(folder, $"GalaxyWearable.Windows.{Guid.NewGuid():N}.download");
+
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Galaxy-Wearable-Windows-Updater");
+            using (var response = await client.GetAsync(_pendingUpdateUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                if (response.Content.Headers.ContentLength is long contentLength
+                    && (contentLength < 10L * 1024 * 1024 || contentLength > maxInstallerBytes))
+                    throw new InvalidDataException($"The downloaded app size ({contentLength:N0} bytes) is outside the expected range.");
+
+                await using var source = await response.Content.ReadAsStreamAsync();
+                await using var destination = new FileStream(
+                    temporaryDownload, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 128, useAsync: true);
+                await source.CopyToAsync(destination);
+                await destination.FlushAsync();
+            }
+
+            var downloadedInfo = new FileInfo(temporaryDownload);
+            if (downloadedInfo.Length < 10L * 1024 * 1024 || downloadedInfo.Length > maxInstallerBytes)
+                throw new InvalidDataException($"The downloaded app size ({downloadedInfo.Length:N0} bytes) is outside the expected range.");
+
+            await using (var downloaded = File.OpenRead(temporaryDownload))
+            {
+                var header = new byte[2];
+                if (await downloaded.ReadAsync(header) != 2 || header[0] != (byte)'M' || header[1] != (byte)'Z')
+                    throw new InvalidDataException("The release asset is not a valid Windows executable.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(_pendingUpdateSha256))
+            {
+                await using var downloaded = File.OpenRead(temporaryDownload);
+                var actualHash = Convert.ToHexString(await SHA256.HashDataAsync(downloaded));
+                if (!string.Equals(actualHash, _pendingUpdateSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("The downloaded executable failed GitHub's published SHA-256 digest check.");
+            }
+
+            _pendingUpdatePath = Path.Combine(folder, "GalaxyWearable.Windows.new.exe");
+            File.Move(temporaryDownload, _pendingUpdatePath, overwrite: true);
+            temporaryDownload = null;
+
             var scriptPath = Path.Combine(Path.GetTempPath(), $"GalaxyWearableUpdate-{Guid.NewGuid():N}.ps1");
             File.WriteAllText(scriptPath, """
                 param([int]$ProcessId, [string]$CurrentPath, [string]$DownloadedPath, [string]$ScriptPath)
@@ -188,18 +213,36 @@ public sealed partial class MainWindow : Window
                 """);
             var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe")
             {
-                UseShellExecute = false, CreateNoWindow = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
                 WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
             };
             foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
                 "-ProcessId", Environment.ProcessId.ToString(), "-CurrentPath", currentPath,
                 "-DownloadedPath", _pendingUpdatePath, "-ScriptPath", scriptPath })
                 psi.ArgumentList.Add(arg);
-            System.Diagnostics.Process.Start(psi);
+
+            if (System.Diagnostics.Process.Start(psi) is null)
+                throw new InvalidOperationException("Windows did not start the update installer.");
+
             UpdateStatusText.Text = "Installing update and restarting…";
             Application.Current.Exit();
         }
-        catch (Exception ex) { UpdateStatusText.Text = $"Couldn't start installer: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Couldn't download or start the update: {ex.Message}";
+            UpdateButton.IsEnabled = true;
+            CheckUpdatesButton.IsEnabled = true;
+            System.Diagnostics.Debug.WriteLine($"Update install error: {ex}");
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporaryDownload) && File.Exists(temporaryDownload))
+            {
+                try { File.Delete(temporaryDownload); }
+                catch { /* Temp-file cleanup is best-effort. */ }
+            }
+        }
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)

@@ -16,10 +16,12 @@ public sealed class BluetoothConnectionService : IDisposable
     private GattCharacteristic? _sapNotifyCharacteristic;
     private GattCharacteristic? _sapWriteCharacteristic;
     private TaskCompletionSource<bool>? _sapHandshakeCompleted;
+    private TaskCompletionSource<bool>? _sapResponseReceived;
     private readonly SemaphoreSlim _sapWriteLock = new(1, 1);
     private readonly List<string> _sapDiagnostics = new();
     private int _sapTransportMtu;
-    private bool _sapHandshakeStarted;
+    private int _sapHandshakeStarted;
+    private bool _sapWatchInfoRequestSent;
 
     private static readonly Guid SapServiceUuid = Guid.Parse("00001a1a-0000-1000-8000-00805f9b34fb");
     private static readonly Guid SapNotifyUuid = Guid.Parse("797ae4e9-2e58-4fe8-b48d-b5c79599fb9b");
@@ -121,10 +123,13 @@ public sealed class BluetoothConnectionService : IDisposable
              (GattCharacteristicProperties.Write | GattCharacteristicProperties.WriteWithoutResponse)) == 0)
             return new[] { "• SAP write characteristic does not advertise a supported write property." };
 
-        _sapDiagnostics.Clear();
-        _sapHandshakeStarted = false;
+        lock (_sapDiagnostics)
+            _sapDiagnostics.Clear();
+        Volatile.Write(ref _sapHandshakeStarted, 0);
         _sapTransportMtu = 0;
+        _sapWatchInfoRequestSent = false;
         _sapHandshakeCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _sapResponseReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic.ValueChanged += SapNotifyCharacteristic_ValueChanged;
 
@@ -137,17 +142,22 @@ public sealed class BluetoothConnectionService : IDisposable
             return new[] { $"• Could not enable SAP notifications: {notifyStatus}." };
         }
 
-        _sapDiagnostics.Add("• Subscribed to the documented SAP notification characteristic.");
+        AddSapDiagnostic("• Subscribed to the documented SAP notification characteristic.");
         var completed = await Task.WhenAny(_sapHandshakeCompleted.Task, Task.Delay(TimeSpan.FromSeconds(6)));
         if (completed != _sapHandshakeCompleted.Task)
         {
-            _sapDiagnostics.Add("• No 105-byte SAP capability request arrived within 6 seconds; no pairing or setup was attempted.");
-            return _sapDiagnostics.ToArray();
+            AddSapDiagnostic("• No 105-byte SAP capability request arrived within 6 seconds; no pairing or setup was attempted.");
+            return GetSapDiagnosticsSnapshot();
         }
 
-        // Give the watch a brief opportunity to answer the read-only WatchInfo request.
-        await Task.Delay(700);
-        return _sapDiagnostics.ToArray();
+        // Wait for a real response rather than returning before the band has time to reply.
+        if (_sapWatchInfoRequestSent)
+        {
+            var responseTask = _sapResponseReceived?.Task;
+            if (responseTask is not null && await Task.WhenAny(responseTask, Task.Delay(TimeSpan.FromSeconds(3))) != responseTask)
+                AddSapDiagnostic("• No valid SAP frame response arrived within 3 seconds of the WatchInfo request.");
+        }
+        return GetSapDiagnosticsSnapshot();
     }
 
     private async void SapNotifyCharacteristic_ValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
@@ -167,58 +177,48 @@ public sealed class BluetoothConnectionService : IDisposable
             if (TryDecodeSapFrame(bytes, out var serviceId, out var message))
             {
                 var hex = Convert.ToHexString(message);
-                lock (_sapDiagnostics)
-                    _sapDiagnostics.Add($"• SAP frame received from service {serviceId}: {hex}");
+                AddSapDiagnostic($"• SAP frame received from service {serviceId}: {hex}");
+                _sapResponseReceived?.TrySetResult(true);
 
                 var ascii = System.Text.Encoding.ASCII.GetString(message);
                 var firmwareMatch = System.Text.RegularExpressions.Regex.Match(ascii, @"R390[A-Z0-9]{7,12}");
                 if (firmwareMatch.Success)
-                {
-                    lock (_sapDiagnostics)
-                        _sapDiagnostics.Add($"• Fit3 firmware reported by WatchInfo: {firmwareMatch.Value}");
-                }
+                    AddSapDiagnostic($"• Fit3 firmware reported by WatchInfo: {firmwareMatch.Value}");
             }
             else
             {
-                lock (_sapDiagnostics)
-                    _sapDiagnostics.Add($"• SAP notification received ({bytes.Length} bytes); it was not a recognized capability request or valid frame.");
+                AddSapDiagnostic($"• SAP notification received ({bytes.Length} bytes); it was not a recognized capability request or valid frame.");
             }
         }
         catch (Exception ex)
         {
-            lock (_sapDiagnostics)
-                _sapDiagnostics.Add($"• SAP notification processing failed: {ex.Message}");
+            AddSapDiagnostic($"• SAP notification processing failed: {ex.Message}");
         }
     }
 
     private async Task HandleSapCapabilityRequestAsync(byte[] request)
     {
-        if (_sapHandshakeStarted)
+        if (Interlocked.Exchange(ref _sapHandshakeStarted, 1) != 0)
             return;
-        _sapHandshakeStarted = true;
 
         _sapTransportMtu = (request[0x2c] << 8) | request[0x2d];
-        lock (_sapDiagnostics)
-            _sapDiagnostics.Add($"• Received SAP capability request (105 bytes); advertised transport MTU: {_sapTransportMtu}.");
+        AddSapDiagnostic($"• Received SAP capability request (105 bytes); advertised transport MTU: {_sapTransportMtu}.");
 
         var response = (byte[])request.Clone();
         response[1] = 0x15;
         var replyStatus = await WriteSapBytesAsync(response);
         if (replyStatus != GattCommunicationStatus.Success)
         {
-            lock (_sapDiagnostics)
-                _sapDiagnostics.Add($"• SAP capability response write failed: {replyStatus}. The protocol session is not ready.");
+            AddSapDiagnostic($"• SAP capability response write failed: {replyStatus}. The protocol session is not ready.");
             _sapHandshakeCompleted?.TrySetResult(false);
             return;
         }
 
-        lock (_sapDiagnostics)
-            _sapDiagnostics.Add("• Sent the matching SAP capability response (opcode 0x15).");
+        AddSapDiagnostic("• Sent the matching SAP capability response (opcode 0x15).");
 
         if (_sapTransportMtu < 15 || _sapTransportMtu > 500)
         {
-            lock (_sapDiagnostics)
-                _sapDiagnostics.Add("• The advertised SAP transport MTU is outside the supported 15–500 byte range; WatchInfo was not sent.");
+            AddSapDiagnostic("• The advertised SAP transport MTU is outside the supported 15–500 byte range; WatchInfo was not sent.");
             _sapHandshakeCompleted?.TrySetResult(true);
             return;
         }
@@ -228,10 +228,10 @@ public sealed class BluetoothConnectionService : IDisposable
         byte[] watchInfo = { 0x01, 0x04, 0x02, 0x00, 0x00, 0x00, 0x05, 0x00, 0x0e };
         var frame = EncodeSapSingleFrame(1, watchInfo, _sapTransportMtu);
         var watchInfoStatus = await WriteSapBytesAsync(frame);
-        lock (_sapDiagnostics)
-            _sapDiagnostics.Add(watchInfoStatus == GattCommunicationStatus.Success
-                ? "• Sent read-only WatchInfo request; waiting for the band response."
-                : $"• WatchInfo request write failed: {watchInfoStatus}.");
+        _sapWatchInfoRequestSent = watchInfoStatus == GattCommunicationStatus.Success;
+        AddSapDiagnostic(_sapWatchInfoRequestSent
+            ? "• Sent read-only WatchInfo request; waiting for the band response."
+            : $"• WatchInfo request write failed: {watchInfoStatus}.");
 
         _sapHandshakeCompleted?.TrySetResult(true);
     }
@@ -333,6 +333,18 @@ public sealed class BluetoothConnectionService : IDisposable
         return crc;
     }
 
+    private void AddSapDiagnostic(string message)
+    {
+        lock (_sapDiagnostics)
+            _sapDiagnostics.Add(message);
+    }
+
+    private string[] GetSapDiagnosticsSnapshot()
+    {
+        lock (_sapDiagnostics)
+            return _sapDiagnostics.ToArray();
+    }
+
     private async Task<string?> ReadStandardDeviceIdentityAsync()
     {
         var service = _services.FirstOrDefault(item =>
@@ -382,8 +394,12 @@ public sealed class BluetoothConnectionService : IDisposable
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;
         _sapWriteCharacteristic = null;
+        _sapHandshakeCompleted?.TrySetCanceled();
+        _sapResponseReceived?.TrySetCanceled();
         _sapHandshakeCompleted = null;
-        _sapHandshakeStarted = false;
+        _sapResponseReceived = null;
+        Volatile.Write(ref _sapHandshakeStarted, 0);
+        _sapWatchInfoRequestSent = false;
         _sapTransportMtu = 0;
         lock (_sapDiagnostics)
             _sapDiagnostics.Clear();
@@ -402,7 +418,10 @@ public sealed class BluetoothConnectionService : IDisposable
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;
         _sapWriteCharacteristic = null;
+        _sapHandshakeCompleted?.TrySetCanceled();
+        _sapResponseReceived?.TrySetCanceled();
         _sapHandshakeCompleted = null;
+        _sapResponseReceived = null;
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();

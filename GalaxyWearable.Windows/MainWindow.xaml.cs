@@ -2,6 +2,7 @@ using GalaxyWearable.Windows.Models;
 using GalaxyWearable.Windows.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using global::Windows.Devices.Radios;
 
 namespace GalaxyWearable.Windows;
@@ -16,6 +17,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
         _connection.HeartRateChanged += Connection_HeartRateChanged;
@@ -31,7 +33,7 @@ public sealed partial class MainWindow : Window
         if (_discovery.IsScanning)
         {
             _discovery.Stop();
-            ScanButton.Content = "Start scanning";
+            ScanButton.Content = "Scan for devices";
             DiscoveryHint.Text = "Scanning stopped. Previously discovered devices remain listed.";
             return;
         }
@@ -61,7 +63,7 @@ public sealed partial class MainWindow : Window
 
             if (bluetoothRadio is null || bluetoothRadio.State != RadioState.On)
             {
-                ScanButton.Content = "Start scanning";
+                ScanButton.Content = "Scan for devices";
                 DiscoveryHint.Text = "Bluetooth scanning is currently unavailable.";
                 return;
             }
@@ -75,13 +77,13 @@ public sealed partial class MainWindow : Window
             }
             else
             {
-                ScanButton.Content = "Start scanning";
+                ScanButton.Content = "Scan for devices";
                 DiscoveryHint.Text = "Bluetooth scanning could not be started.";
             }
         }
         catch
         {
-            ScanButton.Content = "Start scanning";
+            ScanButton.Content = "Scan for devices";
             DiscoveryHint.Text = "Bluetooth scanning is currently unavailable.";
         }
         finally
@@ -98,7 +100,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 await _connection.DisconnectAsync();
-                ConnectButton.Content = "Connect selected";
+                ConnectButton.Content = "Connect";
                 ConnectionHint.Text = "BLE connection closed.";
                 GattDetails.Text = string.Empty;
             }
@@ -132,7 +134,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             ConnectionHint.Text = $"Could not connect: {ex.Message}";
-            ConnectButton.Content = "Connect selected";
+            ConnectButton.Content = "Connect";
         }
         finally
         {

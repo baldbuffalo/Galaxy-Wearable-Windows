@@ -332,8 +332,27 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (_connectingDeviceId == selected.Id)
+        if (_connectingDeviceId is not null)
+        {
+            if (!string.Equals(_connectingDeviceId, selected.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                // The connection service owns one GATT session. Revert the UI
+                // selection instead of starting a second session concurrently.
+                _isRefreshingDevices = true;
+                try
+                {
+                    DevicesList.SelectedItem = _devices.GetValueOrDefault(_connectingDeviceId);
+                }
+                finally
+                {
+                    _isRefreshingDevices = false;
+                }
+
+                var activeName = _devices.GetValueOrDefault(_connectingDeviceId)?.Name ?? "the selected wearable";
+                DiscoveryHint.Text = $"Connecting to {activeName}. Wait for this attempt to finish before selecting another device.";
+            }
             return;
+        }
 
         _connectingDeviceId = selected.Id;
         DiscoveryHint.Text = $"Connecting to {selected.Name}…";

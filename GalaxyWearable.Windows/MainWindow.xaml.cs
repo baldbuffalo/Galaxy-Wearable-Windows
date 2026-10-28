@@ -59,6 +59,26 @@ public sealed partial class MainWindow : Window
 
     private static void EnsureDesktopShortcut()
     {
+        // Shell automation must not run synchronously during WinUI window construction.
+        // Use an STA worker so COM initialization/cleanup cannot interfere with XAML startup.
+        try
+        {
+            var shortcutThread = new Thread(CreateDesktopShortcut)
+            {
+                IsBackground = true,
+                Name = "Galaxy Wearable desktop shortcut"
+            };
+            shortcutThread.SetApartmentState(ApartmentState.STA);
+            shortcutThread.Start();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Could not schedule desktop shortcut creation: {ex}");
+        }
+    }
+
+    private static void CreateDesktopShortcut()
+    {
         object? shellObject = null;
         object? shortcutObject = null;
 
@@ -102,10 +122,26 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            if (shortcutObject is not null && Marshal.IsComObject(shortcutObject))
-                Marshal.FinalReleaseComObject(shortcutObject);
-            if (shellObject is not null && Marshal.IsComObject(shellObject))
-                Marshal.FinalReleaseComObject(shellObject);
+            // COM cleanup is best-effort and must never terminate app startup.
+            try
+            {
+                if (shortcutObject is not null && Marshal.IsComObject(shortcutObject))
+                    Marshal.FinalReleaseComObject(shortcutObject);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Shortcut COM cleanup failed: {ex}");
+            }
+
+            try
+            {
+                if (shellObject is not null && Marshal.IsComObject(shellObject))
+                    Marshal.FinalReleaseComObject(shellObject);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Shell COM cleanup failed: {ex}");
+            }
         }
     }
 

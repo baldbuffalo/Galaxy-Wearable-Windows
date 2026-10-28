@@ -93,7 +93,8 @@ public sealed class BluetoothDiscoveryService : IDisposable
                         FormatAddress(device.BluetoothAddress),
                         null,
                         true,
-                        DateTimeOffset.Now);
+                        DateTimeOffset.Now,
+                        info.Id);
                 }
                 catch
                 {

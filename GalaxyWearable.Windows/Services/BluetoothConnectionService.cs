@@ -517,10 +517,6 @@ public sealed class BluetoothConnectionService : IDisposable
             characteristic.Dispose();
         _characteristics.Clear();
 
-        foreach (var characteristic in _characteristics)
-            characteristic.Dispose();
-        _characteristics.Clear();
-
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();
@@ -550,6 +546,13 @@ public sealed class BluetoothConnectionService : IDisposable
         _sapResponseReceived?.TrySetCanceled();
         _sapHandshakeCompleted = null;
         _sapResponseReceived = null;
+        Volatile.Write(ref _sapHandshakeStarted, 0);
+        _sapWatchInfoRequestSent = false;
+        _sapTransportMtu = 0;
+
+        foreach (var characteristic in _characteristics)
+            characteristic.Dispose();
+        _characteristics.Clear();
 
         foreach (var service in _services)
             service.Dispose();

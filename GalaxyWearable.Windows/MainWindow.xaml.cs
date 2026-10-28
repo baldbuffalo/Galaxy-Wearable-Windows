@@ -13,6 +13,9 @@ public sealed partial class MainWindow : Window
     private readonly BluetoothConnectionService _connection = new();
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly Dictionary<string, WearableDevice> _devices = new();
+    private bool _isRefreshingDevices;
+    private string? _connectingDeviceId;
+    private string? _connectedDeviceId;
 
     public MainWindow()
     {
@@ -20,7 +23,6 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
-        _connection.HeartRateChanged += Connection_HeartRateChanged;
         Closed += (_, _) =>
         {
             _discovery.Dispose();
@@ -33,7 +35,7 @@ public sealed partial class MainWindow : Window
         if (_discovery.IsScanning)
         {
             _discovery.Stop();
-            ScanButton.Content = "Scan for devices";
+            ScanButton.Content = "Find devices";
             DiscoveryHint.Text = "Scanning stopped. Previously discovered devices remain listed.";
             return;
         }
@@ -63,7 +65,7 @@ public sealed partial class MainWindow : Window
 
             if (bluetoothRadio is null || bluetoothRadio.State != RadioState.On)
             {
-                ScanButton.Content = "Scan for devices";
+                ScanButton.Content = "Find devices";
                 DiscoveryHint.Text = "Bluetooth scanning is currently unavailable.";
                 return;
             }
@@ -73,17 +75,17 @@ public sealed partial class MainWindow : Window
             if (_discovery.IsScanning)
             {
                 ScanButton.Content = "Stop scanning";
-                DiscoveryHint.Text = "Scanning nearby Bluetooth LE advertisements. Select a device to connect.";
+                DiscoveryHint.Text = "Looking for nearby Samsung Galaxy watches and bands…";
             }
             else
             {
-                ScanButton.Content = "Scan for devices";
+                ScanButton.Content = "Find devices";
                 DiscoveryHint.Text = "Bluetooth scanning could not be started.";
             }
         }
         catch
         {
-            ScanButton.Content = "Scan for devices";
+            ScanButton.Content = "Find devices";
             DiscoveryHint.Text = "Bluetooth scanning is currently unavailable.";
         }
         finally
@@ -92,71 +94,39 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void ConnectButton_Click(object sender, RoutedEventArgs e)
+    private async void DevicesList_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
     {
-        if (_connection.IsConnected)
+        if (_isRefreshingDevices || DevicesList.SelectedItem is not WearableDevice selected)
+            return;
+
+        if (_connectedDeviceId == selected.Id && _connection.IsConnected)
         {
-            ConnectButton.IsEnabled = false;
-            try
-            {
-                await _connection.DisconnectAsync();
-                ConnectButton.Content = "Connect";
-                ConnectionHint.Text = "BLE connection closed.";
-                GattDetails.Text = string.Empty;
-            }
-            catch (Exception ex)
-            {
-                ConnectionHint.Text = $"Disconnect issue: {ex.Message}";
-            }
-            finally
-            {
-                ConnectButton.IsEnabled = true;
-            }
+            DiscoveryHint.Text = $"{selected.Name} is connected.";
             return;
         }
 
-        if (DevicesList.SelectedItem is not WearableDevice selected)
-        {
-            ConnectionHint.Text = "Select a detected Samsung wearable first.";
+        if (_connectingDeviceId == selected.Id)
             return;
-        }
 
-        ConnectButton.IsEnabled = false;
-        ConnectionHint.Text = $"Connecting to {selected.Name} and discovering GATT services…";
-        GattDetails.Text = string.Empty;
+        _connectingDeviceId = selected.Id;
+        DiscoveryHint.Text = $"Connecting to {selected.Name}…";
 
         try
         {
-            GattDetails.Text = await _connection.ConnectAndInspectAsync(selected.Id);
-            ConnectButton.Content = "Disconnect";
-            ConnectionHint.Text = "BLE connected. Samsung companion pairing is not yet established.";
+            await _connection.ConnectAndInspectAsync(selected.Id);
+            _connectedDeviceId = selected.Id;
+            DiscoveryHint.Text = $"Connected to {selected.Name}.";
         }
         catch (Exception ex)
         {
-            ConnectionHint.Text = $"Could not connect: {ex.Message}";
-            ConnectButton.Content = "Connect";
+            _connectedDeviceId = null;
+            DiscoveryHint.Text = $"Couldn't connect to {selected.Name}. Make sure it is nearby and available, then select it again.";
+            System.Diagnostics.Debug.WriteLine($"BLE connection error: {ex}");
         }
         finally
         {
-            ConnectButton.IsEnabled = true;
+            _connectingDeviceId = null;
         }
-    }
-
-    private async void HeartRateButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            ConnectionHint.Text = await _connection.StartHeartRateNotificationsAsync();
-        }
-        catch (Exception ex)
-        {
-            ConnectionHint.Text = $"Heart-rate subscription failed: {ex.Message}";
-        }
-    }
-
-    private void Connection_HeartRateChanged(object? sender, string message)
-    {
-        _dispatcherQueue.TryEnqueue(() => ConnectionHint.Text = message);
     }
 
     private void Discovery_DevicesChanged(object? sender, IReadOnlyList<WearableDevice> devices)
@@ -168,11 +138,24 @@ public sealed partial class MainWindow : Window
 
             var selectedId = (DevicesList.SelectedItem as WearableDevice)?.Id;
             var items = _devices.Values.OrderByDescending(device => device.LastSeen).ToArray();
-            DevicesList.ItemsSource = items;
-            if (selectedId is not null)
-                DevicesList.SelectedItem = items.FirstOrDefault(device => device.Id == selectedId);
 
-            DiscoveryHint.Text = $"Found {_devices.Count} likely Samsung wearable(s). Select one to connect.";
+            _isRefreshingDevices = true;
+            try
+            {
+                DevicesList.ItemsSource = items;
+                if (selectedId is not null)
+                    DevicesList.SelectedItem = items.FirstOrDefault(device => device.Id == selectedId);
+            }
+            finally
+            {
+                _isRefreshingDevices = false;
+            }
+
+            DiscoveryHint.Text = _connectedDeviceId is not null
+                ? $"Connected to {_devices.GetValueOrDefault(_connectedDeviceId)?.Name ?? "your wearable"}."
+                : _devices.Count == 0
+                    ? "Choose Find devices to look for nearby Samsung wearables."
+                    : $"Found {_devices.Count} likely Samsung wearable(s). Select a device to connect.";
         });
     }
 }

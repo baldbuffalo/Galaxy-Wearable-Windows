@@ -7,6 +7,8 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using global::Windows.Devices.Radios;
+using global::Windows.Devices.Enumeration;
+using global::Windows.Devices.Bluetooth;
 
 namespace GalaxyWearable.Windows;
 
@@ -19,6 +21,9 @@ public sealed partial class MainWindow : Window
     private bool _isRefreshingDevices;
     private string? _connectingDeviceId;
     private string? _connectedDeviceId;
+    private Radio? _bluetoothRadio;
+    private bool _isRestoringConnection;
+    private string SavedDevicePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GalaxyWearableWindows", "paired-device.json");
 
     public MainWindow()
     {
@@ -26,6 +31,7 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
+        _ = InitializeBluetoothLifecycleAsync();
         Closed += (_, _) =>
         {
             _discovery.Dispose();
@@ -234,14 +240,16 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            var pairingMessage = await PairThroughWindowsBluetoothAsync(selected);
             await _connection.ConnectAndInspectAsync(selected.Id);
             _connectedDeviceId = selected.Id;
-            DiscoveryHint.Text = $"Connected to {selected.Name}.";
+            await SavePairedDeviceAsync(selected);
+            DiscoveryHint.Text = $"{pairingMessage} Connected to {selected.Name}. This device will be remembered for reconnection.";
         }
         catch (Exception ex)
         {
             _connectedDeviceId = null;
-            DiscoveryHint.Text = $"Couldn't connect to {selected.Name}. Make sure it is nearby and available, then select it again.";
+            DiscoveryHint.Text = $"Couldn't pair/connect to {selected.Name}. Make sure it is nearby and available. Details: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"BLE connection error: {ex}");
         }
         finally
@@ -249,6 +257,126 @@ public sealed partial class MainWindow : Window
             _connectingDeviceId = null;
         }
     }
+
+
+    private async Task<string> PairThroughWindowsBluetoothAsync(WearableDevice selected)
+    {
+        DeviceInformation? info = null;
+        if (!string.IsNullOrWhiteSpace(selected.DeviceInformationId))
+            info = await DeviceInformation.CreateFromIdAsync(selected.DeviceInformationId);
+
+        // Advertisement discovery may not include a Windows device ID. Resolve it
+        // from Windows' unpaired BLE device list by Bluetooth address.
+        if (info is null)
+        {
+            var candidates = await DeviceInformation.FindAllAsync(
+                BluetoothLEDevice.GetDeviceSelectorFromPairingState(false));
+            foreach (var candidate in candidates)
+            {
+                try
+                {
+                    using var device = await BluetoothLEDevice.FromIdAsync(candidate.Id);
+                    if (device is not null &&
+                        string.Equals(device.BluetoothAddress.ToString("X12"), selected.Id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        info = candidate;
+                        break;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        if (info is null)
+            throw new InvalidOperationException("Windows couldn't resolve this device for Bluetooth pairing. Try finding it again in Windows Bluetooth settings.");
+
+        if (info.Pairing.IsPaired)
+            return "Already paired in Windows.";
+
+        if (!info.Pairing.CanPair)
+            throw new InvalidOperationException("Windows reports that this device cannot be paired through the standard Bluetooth pairing API.");
+
+        var result = await info.Pairing.PairAsync(global::Windows.Devices.Enumeration.DevicePairingProtectionLevel.None);
+        if (result.Status is global::Windows.Devices.Enumeration.DevicePairingResultStatus.Paired
+            or global::Windows.Devices.Enumeration.DevicePairingResultStatus.AlreadyPaired)
+            return "Paired through Windows Bluetooth.";
+
+        throw new InvalidOperationException($"Windows Bluetooth pairing did not complete: {result.Status}.");
+    }
+
+    private async Task SavePairedDeviceAsync(WearableDevice device)
+    {
+        var folder = Path.GetDirectoryName(SavedDevicePath)!;
+        Directory.CreateDirectory(folder);
+        var json = JsonSerializer.Serialize(new SavedWearable(device.Name, device.Id));
+        await File.WriteAllTextAsync(SavedDevicePath, json);
+    }
+
+    private async Task InitializeBluetoothLifecycleAsync()
+    {
+        try
+        {
+            var radios = await Radio.GetRadiosAsync();
+            _bluetoothRadio = radios.FirstOrDefault(radio => radio.Kind == RadioKind.Bluetooth);
+            if (_bluetoothRadio is not null)
+                _bluetoothRadio.StateChanged += BluetoothRadio_StateChanged;
+
+            if (_bluetoothRadio?.State == RadioState.On)
+                await RestoreSavedDeviceAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Bluetooth lifecycle initialization failed: {ex}");
+        }
+    }
+
+    private async void BluetoothRadio_StateChanged(Radio sender, object args)
+    {
+        if (sender.State != RadioState.On)
+        {
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                _connectedDeviceId = null;
+                DiscoveryHint.Text = "Bluetooth is off. Your saved wearable will be reconnected when Bluetooth is on.";
+            });
+            return;
+        }
+
+        await Task.Delay(1200);
+        await RestoreSavedDeviceAsync();
+    }
+
+    private async Task RestoreSavedDeviceAsync()
+    {
+        if (_isRestoringConnection || _connection.IsConnected)
+            return;
+        _isRestoringConnection = true;
+        try
+        {
+            if (!File.Exists(SavedDevicePath))
+                return;
+
+            var saved = JsonSerializer.Deserialize<SavedWearable>(await File.ReadAllTextAsync(SavedDevicePath));
+            if (saved is null || string.IsNullOrWhiteSpace(saved.Id))
+                return;
+
+            _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = $"Reconnecting to {saved.Name}…");
+            await _connection.ConnectAndInspectAsync(saved.Id);
+            _connectedDeviceId = saved.Id;
+            _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = $"Connected to saved wearable {saved.Name}.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Saved wearable reconnect failed: {ex}");
+            _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = "Saved wearable is not reachable yet. It will be retried when Bluetooth is turned on again.");
+        }
+        finally
+        {
+            _isRestoringConnection = false;
+        }
+    }
+
+    private sealed record SavedWearable(string Name, string Id);
 
     private void Discovery_DevicesChanged(object? sender, IReadOnlyList<WearableDevice> devices)
     {

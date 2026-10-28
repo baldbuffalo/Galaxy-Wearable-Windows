@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using global::Windows.Devices.Radios;
+using System.Runtime.InteropServices;
 
 namespace GalaxyWearable.Windows;
 
@@ -28,6 +29,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        EnsureDesktopShortcut();
         SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
@@ -54,6 +56,58 @@ public sealed partial class MainWindow : Window
         };
     }
 
+
+    private static void EnsureDesktopShortcut()
+    {
+        object? shellObject = null;
+        object? shortcutObject = null;
+
+        try
+        {
+            var executablePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+                return;
+
+            var desktopDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktopDirectory) || !Directory.Exists(desktopDirectory))
+                return;
+
+            var shortcutPath = Path.Combine(desktopDirectory, "Galaxy Wearable.lnk");
+            // Respect a shortcut the user already has rather than overwriting custom settings.
+            if (File.Exists(shortcutPath))
+                return;
+
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType is null)
+                return;
+
+            shellObject = Activator.CreateInstance(shellType);
+            if (shellObject is null)
+                return;
+
+            dynamic shell = shellObject;
+            shortcutObject = shell.CreateShortcut(shortcutPath);
+            dynamic shortcut = shortcutObject;
+            shortcut.TargetPath = executablePath;
+            shortcut.WorkingDirectory = Path.GetDirectoryName(executablePath) ?? desktopDirectory;
+            shortcut.Description = "Open Galaxy Wearable for Windows";
+            shortcut.IconLocation = executablePath + ",0";
+            shortcut.Save();
+        }
+        catch (Exception ex)
+        {
+            // Desktop shortcut creation is a convenience, not a reason to prevent
+            // the wearable app from opening (for example, if script-host COM is disabled).
+            System.Diagnostics.Debug.WriteLine($"Desktop shortcut creation failed: {ex}");
+        }
+        finally
+        {
+            if (shortcutObject is not null && Marshal.IsComObject(shortcutObject))
+                Marshal.FinalReleaseComObject(shortcutObject);
+            if (shellObject is not null && Marshal.IsComObject(shellObject))
+                Marshal.FinalReleaseComObject(shellObject);
+        }
+    }
 
     private string? _pendingUpdatePath;
     private string? _pendingUpdateUrl;

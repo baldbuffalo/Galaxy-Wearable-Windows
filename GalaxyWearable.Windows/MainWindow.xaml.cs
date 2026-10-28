@@ -241,9 +241,11 @@ public sealed partial class MainWindow : Window
         try
         {
             var pairingMessage = await PairThroughWindowsBluetoothAsync(selected);
+            // Save immediately after Windows pairing so the app remembers the device
+            // even if its first GATT connection is unavailable or exposes no services.
+            await SavePairedDeviceAsync(selected);
             await _connection.ConnectAndInspectAsync(selected.Id);
             _connectedDeviceId = selected.Id;
-            await SavePairedDeviceAsync(selected);
             DiscoveryHint.Text = $"{pairingMessage} Connected to {selected.Name}. This device will be remembered for reconnection.";
         }
         catch (Exception ex)

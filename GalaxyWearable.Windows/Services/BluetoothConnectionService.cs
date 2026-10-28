@@ -32,12 +32,12 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
 
-    public async Task<string> ConnectAndInspectAsync(string bluetoothAddress)
+    public async Task<string> ConnectAndInspectAsync(string bluetoothAddress, string? deviceInformationId = null)
     {
         await _sessionLock.WaitAsync();
         try
         {
-            return await ConnectAndInspectCoreAsync(bluetoothAddress);
+            return await ConnectAndInspectCoreAsync(bluetoothAddress, deviceInformationId);
         }
         finally
         {
@@ -45,16 +45,34 @@ public sealed class BluetoothConnectionService : IDisposable
         }
     }
 
-    private async Task<string> ConnectAndInspectCoreAsync(string bluetoothAddress)
+    private async Task<string> ConnectAndInspectCoreAsync(string bluetoothAddress, string? deviceInformationId)
     {
-        if (!ulong.TryParse(bluetoothAddress, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var address))
-            throw new ArgumentException("The selected device has an invalid Bluetooth address.", nameof(bluetoothAddress));
+        var hasAddress = ulong.TryParse(
+            bluetoothAddress, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var address);
+        if (!hasAddress && string.IsNullOrWhiteSpace(deviceInformationId))
+            throw new ArgumentException("The selected device has neither a valid Bluetooth address nor a Windows device ID.", nameof(bluetoothAddress));
 
         await DisconnectCoreAsync();
 
-        _device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
+        // Prefer Windows' device identity when available because BLE private
+        // addresses can rotate. Fall back to the last observed address if needed.
+        if (!string.IsNullOrWhiteSpace(deviceInformationId))
+        {
+            try
+            {
+                _device = await BluetoothLEDevice.FromIdAsync(deviceInformationId);
+            }
+            catch
+            {
+                _device = null;
+            }
+        }
+
+        if (_device is null && hasAddress)
+            _device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
+
         if (_device is null)
-            throw new InvalidOperationException("Windows could not open this Bluetooth LE device. Make sure it is nearby and advertising.");
+            throw new InvalidOperationException("Windows could not open this Bluetooth LE device. Make sure it is nearby, available, and not blocked by another connection.");
 
         _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
         _device.ConnectionStatusChanged += Device_ConnectionStatusChanged;

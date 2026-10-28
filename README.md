@@ -17,6 +17,7 @@ A native Windows companion app aiming to support Samsung Galaxy smartwatches and
 - Select a discovered device and open a Bluetooth LE connection without invoking Windows pairing or Samsung's new-phone setup flow.
 - Persist the selected BLE address and attempt to reconnect when Windows Bluetooth is turned back on.
 - Probe documented Fit3 service families and report which vendor-specific channels are visible.
+- Negotiate the documented Fit3 SAP capability handshake on service `1A1A` and issue a read-only WatchInfo request when the band initiates the exchange.
 - Enumerate exposed GATT services and characteristics and display their UUIDs/properties.
 - Attempt to turn on the Windows Bluetooth radio before scanning, subject to Windows permissions and hardware support.
 
@@ -48,6 +49,7 @@ Open `GalaxyWearable.Windows.sln` in Visual Studio, restore NuGet packages, sele
 ## References
 
 - [Fit3Free: public Galaxy Fit3 BLE/GATT observations](https://github.com/Astroisback/Fit3Free) — third-party reverse-engineering research, not an official Samsung specification.
+- [Fit3Bridge protocol reference](https://github.com/GokulArumugam/Fit3Bridge/blob/main/docs/PROTOCOL.md) — public SAP framing and capability-handshake notes; consulted as a protocol reference, not copied source code.
 - [Samsung Gulf: pairing the Galaxy Fit3 with a phone](https://www.samsung.com/ae/support/mobile-devices/pairing-your-galaxy-fit3-with-your-phone/).
 
 ## License

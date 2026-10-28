@@ -72,6 +72,7 @@ jobs:
           /property:PublishTrimmed=false
           /property:PublishAot=false
           /property:PublishReadyToRun=false
+          /property:Version=1.0.${{ github.run_number }}.0
 
       - name: Verify single-file executable
         shell: pwsh

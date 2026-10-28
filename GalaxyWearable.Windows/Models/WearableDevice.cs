@@ -12,7 +12,7 @@ public sealed record WearableDevice(
     string? DeviceInformationId = null)
 {
     public string SignalText => SignalStrength is short value ? $"{value} dBm" : "Unknown signal";
-    public string ConnectableText => IsConnectable ? "Nearby via Bluetooth" : "Advertising only";
+    public string ConnectableText => SignalStrength is null ? "Saved in Windows Bluetooth devices" : IsConnectable ? "Nearby via Bluetooth" : "Advertising only";
 
     // Use official Samsung product renders when the detected name identifies a known model.
     // Unknown models deliberately have no guessed model-specific image.

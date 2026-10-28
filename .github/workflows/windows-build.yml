@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+# Only publish the newest main revision. Older queued builds must not finish later
+# and overwrite the latest-release pointer with an older executable.
+concurrency:
+  group: galaxy-wearable-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows-x64:
     name: Build unpackaged Windows app
@@ -46,7 +52,7 @@ jobs:
       - name: Set up Visual Studio MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      - name: Publish self-contained WinUI app (loose files)
+      - name: Publish self-contained WinUI app (single executable)
         shell: pwsh
         run: >-
           msbuild GalaxyWearable.Windows/GalaxyWearable.Windows.csproj

@@ -29,13 +29,16 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
+        _connection.ConnectionStateChanged += Connection_ConnectionStateChanged;
         _ = InitializeBluetoothLifecycleAsync();
         Closed += (_, _) =>
         {
-            _discovery.Dispose();
-            _connection.Dispose();
+            _discovery.DevicesChanged -= Discovery_DevicesChanged;
+            _connection.ConnectionStateChanged -= Connection_ConnectionStateChanged;
             if (_bluetoothRadio is not null)
                 _bluetoothRadio.StateChanged -= BluetoothRadio_StateChanged;
+            _discovery.Dispose();
+            _connection.Dispose();
         };
     }
 
@@ -432,6 +435,23 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record SavedWearable(string Name, string Id);
+
+    private void Connection_ConnectionStateChanged(string address, bool connected)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            // Ignore delayed events from a previously selected wearable.
+            if (!string.Equals(_connectedDeviceId, address, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (!connected)
+            {
+                _connectedDeviceId = null;
+                var name = _devices.GetValueOrDefault(address)?.Name ?? "your wearable";
+                DiscoveryHint.Text = $"Connection to {name} was lost. Select it to reconnect.";
+            }
+        });
+    }
 
     private void Discovery_DevicesChanged(object? sender, IReadOnlyList<WearableDevice> devices)
     {

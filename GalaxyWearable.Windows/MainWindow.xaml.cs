@@ -113,7 +113,16 @@ public sealed partial class MainWindow : Window
                 || string.IsNullOrWhiteSpace(urlElement.GetString()))
                 throw new InvalidDataException("The latest release has no GalaxyWearable.Windows.exe asset.");
 
-            _pendingUpdateUrl = urlElement.GetString();
+            var candidateUrl = urlElement.GetString();
+            if (!Uri.TryCreate(candidateUrl, UriKind.Absolute, out var updateUri)
+                || updateUri.Scheme != Uri.UriSchemeHttps
+                || !string.Equals(updateUri.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+                || !updateUri.AbsolutePath.StartsWith(
+                    "/baldbuffalo/Galaxy-Wearable-Windows/releases/download/",
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The update URL is not a trusted HTTPS release asset for this repository.");
+
+            _pendingUpdateUrl = updateUri.AbsoluteUri;
             if (asset.TryGetProperty("digest", out var digestElement))
             {
                 var digest = digestElement.GetString();

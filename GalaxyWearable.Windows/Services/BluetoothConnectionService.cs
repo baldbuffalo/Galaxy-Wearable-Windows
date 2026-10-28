@@ -39,11 +39,20 @@ public sealed class BluetoothConnectionService : IDisposable
         if (_device is null)
             throw new InvalidOperationException("Windows could not open this Bluetooth LE device. Make sure it is nearby and advertising.");
 
-        var result = await _device.GetGattServicesAsync(BluetoothCacheMode.Uncached);
-        if (result.Status != GattCommunicationStatus.Success)
-            throw new InvalidOperationException($"Connected to the BLE device, but service discovery returned: {result.Status}.");
+        try
+        {
+            var result = await _device.GetGattServicesAsync(BluetoothCacheMode.Uncached);
+            if (result.Status != GattCommunicationStatus.Success)
+                throw new InvalidOperationException($"Connected to the BLE device, but service discovery returned: {result.Status}.");
 
-        _services.AddRange(result.Services);
+            _services.AddRange(result.Services);
+        }
+        catch
+        {
+            // Do not retain a half-open device after GATT discovery fails.
+            await DisconnectAsync();
+            throw;
+        }
 
         var lines = new List<string>
         {
@@ -57,16 +66,21 @@ public sealed class BluetoothConnectionService : IDisposable
         foreach (var service in _services)
         {
             lines.Add($"• Service {service.Uuid}");
-            var characteristicsResult = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
-            if (characteristicsResult.Status != GattCommunicationStatus.Success)
+            try
             {
-                lines.Add($"  Could not enumerate characteristics: {characteristicsResult.Status}");
-                continue;
-            }
+                var characteristicsResult = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+                if (characteristicsResult.Status != GattCommunicationStatus.Success)
+                {
+                    lines.Add($"  Could not enumerate characteristics: {characteristicsResult.Status}");
+                    continue;
+                }
 
-            foreach (var characteristic in characteristicsResult.Characteristics)
+                foreach (var characteristic in characteristicsResult.Characteristics)
+                    lines.Add($"  • {characteristic.Uuid} [{characteristic.CharacteristicProperties}]");
+            }
+            catch (Exception ex)
             {
-                lines.Add($"  • {characteristic.Uuid} [{characteristic.CharacteristicProperties}]");
+                lines.Add($"  Characteristic enumeration failed: {ex.Message}");
             }
         }
 
@@ -88,7 +102,14 @@ public sealed class BluetoothConnectionService : IDisposable
 
         lines.Add("");
         lines.Add("Samsung Accessory Protocol (SAP):");
-        lines.AddRange(await StartSapSessionAsync());
+        try
+        {
+            lines.AddRange(await StartSapSessionAsync());
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"• SAP probe failed without starting pairing/setup: {ex.Message}");
+        }
 
         lines.Add("");
         lines.Add("• No Windows pairing, watch reset, or first-run setup messages are initiated.");
@@ -103,7 +124,16 @@ public sealed class BluetoothConnectionService : IDisposable
         if (service is null)
             return new[] { "• SAP service (1A1A) is not visible in this BLE session." };
 
-        var result = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+        GattCharacteristicsResult result;
+        try
+        {
+            result = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+        }
+        catch (Exception ex)
+        {
+            return new[] { $"• SAP characteristic discovery threw an error: {ex.Message}" };
+        }
+
         if (result.Status != GattCommunicationStatus.Success)
             return new[] { $"• SAP characteristic discovery failed: {result.Status}." };
 
@@ -352,7 +382,16 @@ public sealed class BluetoothConnectionService : IDisposable
         if (service is null)
             return null;
 
-        var result = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+        GattCharacteristicsResult result;
+        try
+        {
+            result = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+        }
+        catch (Exception ex)
+        {
+            return $"service present; characteristic discovery failed: {ex.Message}";
+        }
+
         if (result.Status != GattCommunicationStatus.Success)
             return $"service present; characteristic discovery returned {result.Status}";
 

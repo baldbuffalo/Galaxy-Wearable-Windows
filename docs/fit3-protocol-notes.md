@@ -9,7 +9,7 @@ Last reviewed: 2026-10-27
 The public [Fit3Free project](https://github.com/Astroisback/Fit3Free) documents a Galaxy Fit3 capture made over BLE without pairing. Its published notes report:
 
 - Standard Device Information service `180A`.
-- Samsung/vendor-specific services, including `1A1A`, `FD69`, and custom 128-bit UUID services. The notes describe some useful characteristics as bond-gated and identify a likely main accessory-protocol channel.
+- Samsung/vendor-specific services, including `1A1A`, `FD69`, and custom 128-bit UUID services. The Fit3 SAP channel on service `1A1A` has a published capability exchange and transport framing reference.
 - Some values and services are unavailable without the relevant bond/authentication state.
 
 This is third-party reverse-engineering research, not a Samsung protocol specification. It may vary by firmware. We use it as a research lead for the Fit3 only, not as a guarantee for every Fit3 firmware version or other Samsung wearable.
@@ -17,6 +17,20 @@ This is third-party reverse-engineering research, not a Samsung protocol specifi
 ## Shared app architecture
 
 The general-purpose Windows app uses shared BLE discovery, connection, and GATT inspection. Standard Bluetooth services can be used when a particular device exposes them. Samsung companion pairing and device-specific features need evidence-based protocol handlers/capabilities; they must not be assumed identical across all product families.
+
+## SAP capability handshake implementation
+
+The public [Fit3Bridge protocol reference](https://github.com/GokulArumugam/Fit3Bridge/blob/main/docs/PROTOCOL.md) documents the following Fit3 SAP exchange for firmware R390XXU0AZA3. This Windows implementation was written independently from that protocol description; it does not copy the reference project's GPL source code.
+
+- Service: `00001a1a-0000-1000-8000-00805f9b34fb`
+- Band-to-host notification characteristic: `797ae4e9-2e58-4fe8-b48d-b5c79599fb9b`
+- Host-to-band write characteristic: `63e30bad-4206-4596-839f-e47cbf7a4b5d`
+- The band sends a raw 105-byte capability request with byte 0 = 104 and byte 1 = `0x14`; the host replies with the same bytes except byte 1 = `0x15`.
+- The transport MTU is read from request offsets `0x2c` and `0x2d`.
+- After a successful capability reply, the app sends a framed, read-only WatchInfo request (SAP service 1, message `01 04 02 00 00 00 05 00 0e`) and logs valid single-frame responses, including a firmware identifier if present.
+- Frame encoding/decoding validates the documented CRC-16/ARC framing.
+
+This is the **SAP transport capability handshake**, not proof of phone identity or a universal authentication bypass. The protocol reference says there is no additional application-level cryptography in this transport handshake; BLE bond requirements and firmware-specific access restrictions are separate. The app deliberately does not send the remaining OOBE setup messages (device status, locale/time initialization, or user agreement), and does not invoke Windows pairing or reset the watch.
 
 ## What this Windows app now does
 
@@ -30,7 +44,7 @@ These are transport/discovery capabilities. A successful BLE connection is not t
 
 ## Not implemented / not verified
 
-- Samsung companion pairing and the full Samsung Accessory Protocol handshake.
+- Full Samsung-phone identity/pairing emulation and any bond-dependent authorization. The documented SAP capability exchange is implemented, but a successful SAP transport handshake does not mean the PC is authenticated as a Samsung phone.
 - Authenticated/bonded proprietary data channels, key negotiation, or phone identity.
 - Notifications, settings sync, health history, firmware updates, and other companion-app features.
 - Automatic reconnect after a drop.
@@ -50,6 +64,7 @@ A true compatible-phone implementation still needs a captured, authorized protoc
 
 1. Run the app with the Fit3 nearby and confirm its advertised name/address appears.
 2. Select it and connect; save the displayed GATT UUIDs and any communication statuses.
-4. Compare observed service/characteristic UUIDs and permissions with the published Fit3Free reference, recording firmware/software versions.
-5. After the first Fit3 baseline, repeat discovery and capability tests on other Samsung watch families when hardware is available.
-6. Research the proprietary handshake from legitimate, observable behavior before attempting companion pairing. Do not treat the existence of a UUID as evidence that its payload format or authentication is known.
+4. Confirm whether the read-only WatchInfo request receives a valid SAP response and record the firmware/software versions.
+5. Compare observed service/characteristic UUIDs and permissions with the published Fit3Free/Fit3Bridge references, recording firmware/software versions.
+6. After the first Fit3 baseline, repeat discovery and capability tests on other Samsung watch families when hardware is available.
+7. Investigate bond-dependent pairing and authorization separately using an authorized protocol trace. Do not treat the SAP capability exchange as proof that the PC has authenticated as a phone.

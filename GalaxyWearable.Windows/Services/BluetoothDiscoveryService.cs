@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using global::Windows.Devices.Bluetooth;
 using global::Windows.Devices.Bluetooth.Advertisement;
+using global::Windows.Devices.Enumeration;
 using GalaxyWearable.Windows.Models;
 
 namespace GalaxyWearable.Windows.Services;
@@ -34,6 +36,10 @@ public sealed class BluetoothDiscoveryService : IDisposable
     {
         LastStopError = null;
 
+        // Windows Settings can already know about a paired watch even when it is
+        // not currently advertising. Seed the list from paired BLE devices first.
+        await AddPairedSamsungWearablesAsync();
+
         if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Created
             or BluetoothLEAdvertisementWatcherStatus.Stopped)
         {
@@ -59,6 +65,66 @@ public sealed class BluetoothDiscoveryService : IDisposable
             _watcher.Stop();
     }
 
+    private async Task AddPairedSamsungWearablesAsync()
+    {
+        try
+        {
+            var selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(true);
+            var pairedDevices = await DeviceInformation.FindAllAsync(selector);
+
+            foreach (var info in pairedDevices)
+            {
+                var name = info.Name?.Trim() ?? string.Empty;
+                if (!NameSuggestsSamsungWearable(name))
+                    continue;
+
+                try
+                {
+                    using var device = await BluetoothLEDevice.FromIdAsync(info.Id);
+                    if (device is null || device.BluetoothAddress == 0)
+                        continue;
+
+                    var displayName = string.IsNullOrWhiteSpace(device.Name) ? name : device.Name.Trim();
+                    _devices[device.BluetoothAddress] = new WearableDevice(
+                        displayName,
+                        device.BluetoothAddress.ToString("X12"),
+                        FormatAddress(device.BluetoothAddress),
+                        null,
+                        true,
+                        DateTimeOffset.Now);
+                }
+                catch
+                {
+                    // Keep scanning advertisements if Windows cannot open one paired entry.
+                }
+            }
+
+            PublishDevices();
+        }
+        catch (Exception ex)
+        {
+            // Pair-list access can be restricted on some Windows configurations.
+            // Advertisement scanning should still be allowed to proceed.
+            LastStopError ??= $"Could not enumerate paired Bluetooth LE devices: {ex.Message}";
+        }
+    }
+
+    private static bool NameSuggestsSamsungWearable(string name) =>
+        (name.Contains("Samsung", StringComparison.OrdinalIgnoreCase)
+         || name.Contains("Galaxy", StringComparison.OrdinalIgnoreCase)
+         || name.Contains("Gear", StringComparison.OrdinalIgnoreCase))
+        && (name.Contains("Watch", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Fit", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Gear", StringComparison.OrdinalIgnoreCase));
+
+    private void PublishDevices()
+    {
+        var snapshot = _devices.Values
+            .OrderByDescending(device => device.LastSeen)
+            .ToArray();
+        DevicesChanged?.Invoke(this, snapshot);
+    }
+
     private void OnAdvertisementReceived(
         BluetoothLEAdvertisementWatcher sender,
         BluetoothLEAdvertisementReceivedEventArgs args)
@@ -72,13 +138,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
         // Use generic advertised watch identity instead of enumerating Samsung models.
         // Standard watch appearance is the strongest model-independent signal.
-        var nameSuggestsSamsungWearable =
-            (name.Contains("Samsung", StringComparison.OrdinalIgnoreCase)
-             || name.Contains("Galaxy", StringComparison.OrdinalIgnoreCase)
-             || name.Contains("Gear", StringComparison.OrdinalIgnoreCase))
-            && (name.Contains("Watch", StringComparison.OrdinalIgnoreCase)
-                || name.Contains("Fit", StringComparison.OrdinalIgnoreCase)
-                || name.Contains("Gear", StringComparison.OrdinalIgnoreCase));
+        var nameSuggestsSamsungWearable = NameSuggestsSamsungWearable(name);
 
         if (!(hasSamsungManufacturerData && (hasWatchAppearance || advertisesHeartRateService))
             && !nameSuggestsSamsungWearable)
@@ -96,11 +156,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
             args.IsConnectable,
             DateTimeOffset.Now);
 
-        var snapshot = _devices.Values
-            .OrderByDescending(device => device.LastSeen)
-            .ToArray();
-
-        DevicesChanged?.Invoke(this, snapshot);
+        PublishDevices();
     }
 
     private static bool HasWatchAppearance(BluetoothLEAdvertisement advertisement)

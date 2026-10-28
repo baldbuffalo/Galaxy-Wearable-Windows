@@ -31,13 +31,13 @@ See [Fit3 protocol research notes](docs/fit3-protocol-notes.md) for the initial 
 
 ## Requirements
 
-- Windows 10 version 1809 or later (Windows 11 recommended)
+- Windows 10 version 2004 (build 19041) or later; Windows 11 recommended.
 - Visual Studio 2022 with the **WinUI application development** workload and Windows App SDK support
 - Bluetooth LE-capable hardware for live discovery and connection
 
 ## Build
 
-Open `GalaxyWearable.Windows.sln` in Visual Studio, restore NuGet packages, select the `x64` configuration, and run the `GalaxyWearable.Windows` project. Bluetooth discovery requires Bluetooth to be enabled in Windows. SDK and package versions are intentionally unchanged.
+Open `GalaxyWearable.Windows.sln` in Visual Studio, restore NuGet packages, select the `x64` configuration, and run the `GalaxyWearable.Windows` project. Bluetooth discovery requires Bluetooth to be enabled in Windows. The GitHub Actions workflow publishes a self-contained x64 executable to each successful `build-*` release; ARM64 is listed as a project RID but is not currently published by CI.
 
 ## Project layout
 

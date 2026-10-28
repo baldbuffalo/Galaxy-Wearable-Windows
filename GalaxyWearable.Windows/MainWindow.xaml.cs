@@ -3,6 +3,9 @@ using GalaxyWearable.Windows.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text.Json;
 using global::Windows.Devices.Radios;
 
 namespace GalaxyWearable.Windows;
@@ -28,6 +31,100 @@ public sealed partial class MainWindow : Window
             _discovery.Dispose();
             _connection.Dispose();
         };
+    }
+
+
+    private void OpenUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        MainPage.Visibility = Visibility.Collapsed;
+        UpdatesPage.Visibility = Visibility.Visible;
+    }
+
+    private void BackFromUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        UpdatesPage.Visibility = Visibility.Collapsed;
+        MainPage.Visibility = Visibility.Visible;
+    }
+
+    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesButton.IsEnabled = false;
+        UpdateStatusText.Text = "Checking the latest release and comparing SHA-256 hashes…";
+
+        try
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Galaxy-Wearable-Windows-Updater");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+            using var releaseResponse = await client.GetAsync(
+                "https://api.github.com/repos/baldbuffalo/Galaxy-Wearable-Windows/releases/latest");
+            releaseResponse.EnsureSuccessStatusCode();
+
+            await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync();
+            using var releaseJson = await JsonDocument.ParseAsync(releaseStream);
+
+            var assets = releaseJson.RootElement.GetProperty("assets");
+            string? downloadUrl = null;
+            foreach (var asset in assets.EnumerateArray())
+            {
+                if (string.Equals(asset.GetProperty("name").GetString(),
+                                  "GalaxyWearable.Windows.exe",
+                                  StringComparison.OrdinalIgnoreCase))
+                {
+                    downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                    break;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(downloadUrl))
+            {
+                UpdateStatusText.Text = "The latest GitHub release does not contain the app executable.";
+                return;
+            }
+
+            var currentPath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
+            {
+                UpdateStatusText.Text = "Could not locate the running executable to calculate its SHA-256 hash.";
+                return;
+            }
+
+            var currentHash = await CalculateSha256Async(currentPath);
+            using var latestResponse = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            latestResponse.EnsureSuccessStatusCode();
+            await using var latestStream = await latestResponse.Content.ReadAsStreamAsync();
+            var latestHashBytes = await SHA256.HashDataAsync(latestStream);
+            var latestHash = Convert.ToHexString(latestHashBytes);
+
+            if (string.Equals(currentHash, latestHash, StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateStatusText.Text = $"You're up to date. SHA-256: {currentHash}";
+            }
+            else
+            {
+                UpdateStatusText.Text =
+                    $"A different build is available (release {releaseJson.RootElement.GetProperty("tag_name").GetString()}). " +
+                    $"The SHA-256 hashes differ.\nInstalled: {currentHash}\nLatest: {latestHash}\n" +
+                    "This check does not install the update automatically.";
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Couldn't check for updates: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Update check error: {ex}");
+        }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private static async Task<string> CalculateSha256Async(string path)
+    {
+        await using var stream = File.OpenRead(path);
+        var hash = await SHA256.HashDataAsync(stream);
+        return Convert.ToHexString(hash);
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)

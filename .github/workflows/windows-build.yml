@@ -93,6 +93,44 @@ jobs:
             throw "Single-file publish produced external files; refusing to publish an EXE that may be incomplete."
           }
 
+      - name: Remove previous releases and all tags
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Remove published releases and their associated tags first.
+          $releaseTags = gh release list --limit 1000 --json tagName --jq '.[].tagName'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not list existing GitHub releases."
+          }
+
+          foreach ($tag in $releaseTags) {
+            if ([string]::IsNullOrWhiteSpace($tag)) { continue }
+            Write-Host "Deleting old release and tag: $tag"
+            gh release delete $tag --yes --cleanup-tag
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not delete release/tag $tag."
+            }
+          }
+
+          # Also remove orphaned tags that do not have a GitHub release.
+          $tagRefs = gh api --paginate "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags" --jq '.[].ref'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not list existing Git tags."
+          }
+
+          foreach ($ref in $tagRefs) {
+            if ([string]::IsNullOrWhiteSpace($ref)) { continue }
+            $relativeRef = $ref.Substring("refs/".Length)
+            Write-Host "Deleting remaining Git tag: $ref"
+            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/$relativeRef"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not delete Git tag $ref."
+            }
+          }
+
       - name: Publish GitHub release with direct executable
         uses: softprops/action-gh-release@v2
         with:

@@ -271,6 +271,9 @@ public sealed partial class MainWindow : Window
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_isClosed)
+            return;
+
         if (_discovery.IsScanning)
         {
             _discovery.Stop();
@@ -285,6 +288,9 @@ public sealed partial class MainWindow : Window
         try
         {
             var radios = await Radio.GetRadiosAsync();
+            if (_isClosed)
+                return;
+
             var bluetoothRadio = radios.FirstOrDefault(radio => radio.Kind == RadioKind.Bluetooth);
 
             if (bluetoothRadio is not null && bluetoothRadio.State != RadioState.On)
@@ -298,7 +304,13 @@ public sealed partial class MainWindow : Window
                     // Windows may block programmatic radio changes for unpackaged desktop apps.
                 }
 
+                if (_isClosed)
+                    return;
+
                 radios = await Radio.GetRadiosAsync();
+                if (_isClosed)
+                    return;
+
                 bluetoothRadio = radios.FirstOrDefault(radio => radio.Kind == RadioKind.Bluetooth);
             }
 
@@ -310,6 +322,11 @@ public sealed partial class MainWindow : Window
             }
 
             await _discovery.StartAsync();
+            if (_isClosed)
+            {
+                _discovery.Stop();
+                return;
+            }
 
             if (_discovery.IsScanning)
             {
@@ -324,13 +341,17 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ScanButton.Content = "Find devices";
-            DiscoveryHint.Text = $"Could not start Bluetooth scanning: {ex.Message}";
+            if (!_isClosed)
+            {
+                ScanButton.Content = "Find devices";
+                DiscoveryHint.Text = $"Could not start Bluetooth scanning: {ex.Message}";
+            }
             System.Diagnostics.Debug.WriteLine($"Bluetooth scan start error: {ex}");
         }
         finally
         {
-            ScanButton.IsEnabled = true;
+            if (!_isClosed)
+                ScanButton.IsEnabled = true;
         }
     }
 

@@ -18,6 +18,7 @@ public sealed class BluetoothConnectionService : IDisposable
     private TaskCompletionSource<bool>? _sapHandshakeCompleted;
     private TaskCompletionSource<bool>? _sapResponseReceived;
     private readonly SemaphoreSlim _sapWriteLock = new(1, 1);
+    private readonly SemaphoreSlim _sessionLock = new(1, 1);
     private readonly List<string> _sapDiagnostics = new();
     private int _sapTransportMtu;
     private int _sapHandshakeStarted;
@@ -32,10 +33,23 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public async Task<string> ConnectAndInspectAsync(string bluetoothAddress)
     {
+        await _sessionLock.WaitAsync();
+        try
+        {
+            return await ConnectAndInspectCoreAsync(bluetoothAddress);
+        }
+        finally
+        {
+            _sessionLock.Release();
+        }
+    }
+
+    private async Task<string> ConnectAndInspectCoreAsync(string bluetoothAddress)
+    {
         if (!ulong.TryParse(bluetoothAddress, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var address))
             throw new ArgumentException("The selected device has an invalid Bluetooth address.", nameof(bluetoothAddress));
 
-        await DisconnectAsync();
+        await DisconnectCoreAsync();
 
         _device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
         if (_device is null)
@@ -55,7 +69,7 @@ public sealed class BluetoothConnectionService : IDisposable
         catch
         {
             // Do not retain a half-open device after GATT discovery fails.
-            await DisconnectAsync();
+            await DisconnectCoreAsync();
             throw;
         }
 
@@ -468,6 +482,19 @@ public sealed class BluetoothConnectionService : IDisposable
 
     public async Task DisconnectAsync()
     {
+        await _sessionLock.WaitAsync();
+        try
+        {
+            await DisconnectCoreAsync();
+        }
+        finally
+        {
+            _sessionLock.Release();
+        }
+    }
+
+    private Task DisconnectCoreAsync()
+    {
         if (_sapNotifyCharacteristic is not null)
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;
@@ -494,11 +521,16 @@ public sealed class BluetoothConnectionService : IDisposable
             _device = null;
             ConnectionStateChanged?.Invoke(address, false);
         }
+
+        return Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        if (_sapNotifyCharacteristic is not null)
+        _sessionLock.Wait();
+        try
+        {
+            if (_sapNotifyCharacteristic is not null)
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;
         _sapWriteCharacteristic = null;
@@ -509,11 +541,18 @@ public sealed class BluetoothConnectionService : IDisposable
         foreach (var service in _services)
             service.Dispose();
         _services.Clear();
-        if (_device is not null)
+            if (_device is not null)
+            {
+                _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
+                _device.Dispose();
+                _device = null;
+            }
+        }
+        finally
         {
-            _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
-            _device.Dispose();
-            _device = null;
+            _sessionLock.Release();
+            _sessionLock.Dispose();
+            _sapWriteLock.Dispose();
         }
     }
 }

@@ -575,6 +575,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         }
         finally
         {
+            CleanupResources();
             _sessionLock.Release();
         }
     }

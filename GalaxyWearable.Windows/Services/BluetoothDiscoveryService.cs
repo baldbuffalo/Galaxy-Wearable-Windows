@@ -22,6 +22,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
 
     public event EventHandler<IReadOnlyList<WearableDevice>>? DevicesChanged;
     public bool IsScanning => _watcher.Status == BluetoothLEAdvertisementWatcherStatus.Started;
+    public string? LastStopError { get; private set; }
 
     public BluetoothDiscoveryService()
     {
@@ -29,12 +30,26 @@ public sealed class BluetoothDiscoveryService : IDisposable
         _watcher.Stopped += OnWatcherStopped;
     }
 
-    public void Start()
+    public async Task StartAsync()
     {
+        LastStopError = null;
+
         if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Created
             or BluetoothLEAdvertisementWatcherStatus.Stopped)
         {
             _watcher.Start();
+        }
+
+        // The watcher status can update asynchronously after Start() returns.
+        // Wait briefly before the UI decides that scanning failed.
+        for (var attempt = 0; attempt < 10 && !IsScanning; attempt++)
+            await Task.Delay(100);
+
+        if (!IsScanning)
+        {
+            var detail = LastStopError is null ? string.Empty : $" Windows reported: {LastStopError}.";
+            throw new InvalidOperationException(
+                $"Bluetooth LE watcher did not enter the Started state (status: {_watcher.Status}).{detail}");
         }
     }
 
@@ -116,7 +131,9 @@ public sealed class BluetoothDiscoveryService : IDisposable
         BluetoothLEAdvertisementWatcher sender,
         BluetoothLEAdvertisementWatcherStoppedEventArgs args)
     {
-        // The UI can inspect Status if Windows stops scanning (for example, Bluetooth off).
+        LastStopError = args.Error == global::Windows.Devices.Bluetooth.BluetoothError.Success
+            ? null
+            : args.Error.ToString();
     }
 
     public void Dispose()

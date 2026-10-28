@@ -27,34 +27,35 @@ public sealed class GattInspectionService
         try
         {
             var result = await device.GetGattServicesAsync(BluetoothCacheMode.Uncached);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (result.Status != GattCommunicationStatus.Success)
-            {
-                var status = result.ProtocolError is byte error ? $"Protocol error 0x{error:X2}" : result.Status.ToString();
-                device.Dispose();
-                return (null, Array.Empty<GattServiceInfo>(), $"GATT service discovery failed: {status}");
-            }
-
             var discoveredServices = result.Services;
-            GattServiceInfo[] services;
             try
             {
-                services = discoveredServices.Select(service =>
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (result.Status != GattCommunicationStatus.Success)
+                {
+                    var status = result.ProtocolError is byte error ? $"Protocol error 0x{error:X2}" : result.Status.ToString();
+                    device.Dispose();
+                    return (null, Array.Empty<GattServiceInfo>(), $"GATT service discovery failed: {status}");
+                }
+
+                var services = discoveredServices.Select(service =>
                     new GattServiceInfo(
                         service.Uuid.ToString(),
                         GetKnownName(service.Uuid),
                         service.DeviceAccessInformation.CurrentStatus.ToString()))
                     .OrderBy(service => service.Name)
                     .ToArray();
+
+                return (device, services, $"Connected to {device.Name}. Found {services.Length} GATT service(s).");
             }
             finally
             {
+                // GATT service objects are disposable even when cancellation or
+                // a failed discovery result prevents normal inspection.
                 foreach (var service in discoveredServices)
                     service.Dispose();
             }
-
-            return (device, services, $"Connected to {device.Name}. Found {services.Length} GATT service(s).");
         }
         catch
         {

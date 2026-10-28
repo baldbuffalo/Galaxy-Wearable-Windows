@@ -36,10 +36,20 @@ public sealed class BluetoothDiscoveryService : IDisposable
     {
         LastStopError = null;
 
+        // A quick stop/start can leave the watcher in Stopping briefly. Wait
+        // for that transition instead of silently skipping Start().
+        for (var attempt = 0; attempt < 20
+             && _watcher.Status == BluetoothLEAdvertisementWatcherStatus.Stopping; attempt++)
+            await Task.Delay(50);
+
         if (_watcher.Status is BluetoothLEAdvertisementWatcherStatus.Created
             or BluetoothLEAdvertisementWatcherStatus.Stopped)
         {
             _watcher.Start();
+        }
+        else if (_watcher.Status != BluetoothLEAdvertisementWatcherStatus.Started)
+        {
+            throw new InvalidOperationException($"Bluetooth LE watcher cannot start from status {_watcher.Status}.");
         }
 
         // Let active BLE discovery populate Windows' unpaired-device enumeration,

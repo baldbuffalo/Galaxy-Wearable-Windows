@@ -15,7 +15,8 @@ A native Windows companion app aiming to support Samsung Galaxy smartwatches and
 
 - Scan for likely Samsung wearables using advertised names, Samsung manufacturer data, and standard watch metadata.
 - Select a discovered device and open a Bluetooth LE connection without invoking Windows pairing or Samsung's new-phone setup flow.
-- Persist the selected BLE address and attempt to reconnect when Windows Bluetooth is turned back on.
+- Prefer Windows' device identity for reconnection when available, with a Bluetooth-address fallback.
+- Persist the selected BLE address and Windows device identity when available, and attempt to reconnect when Windows Bluetooth is turned back on.
 - Probe documented Fit3 service families and report which vendor-specific channels are visible.
 - Negotiate the documented Fit3 SAP capability handshake on service `1A1A` and issue a read-only WatchInfo request when the band initiates the exchange.
 - Enumerate exposed GATT services and characteristics and display their UUIDs/properties.
@@ -23,7 +24,7 @@ A native Windows companion app aiming to support Samsung Galaxy smartwatches and
 
 ## Important limitations
 
-The app does **not yet impersonate a Galaxy phone**. It deliberately avoids re-pairing or resetting the Fit3 Reconnection is best-effort and not yet verified on a physical Fit3. Samsung companion authentication, proprietary accessory-protocol handshakes, bonded data channels, notifications/settings sync, health history, and firmware updates remain unimplemented.
+The app does **not yet impersonate a Galaxy phone**. It deliberately avoids re-pairing or resetting the Fit3. Reconnection is best-effort and not yet verified on a physical Fit3. Samsung companion authentication, proprietary accessory-protocol handshakes, bonded data channels, notifications/settings sync, health history, and firmware updates remain unimplemented.
 
 Samsung watches do not all expose identical services or use identical pairing flows. Support must be verified per device family and firmware; the Fit3 is our first test target. Public Fit3 reverse-engineering notes indicate that some proprietary channels are bond-gated. Windows cannot automatically reuse the S26's Bluetooth bond, and the app does not send guessed proprietary commands or claim full phone-like pairing.
 

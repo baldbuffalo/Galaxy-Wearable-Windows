@@ -66,20 +66,18 @@ jobs:
             throw "Microsoft.UI.Xaml.dll was not found in the publish output."
           }
 
-      - name: Package complete app folder
+      - name: Verify no nested ZIP files
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist/GalaxyWearable-Windows/win-x64/*" -DestinationPath "dist/Galaxy-Wearable-Windows.zip" -Force
-
-          $size = (Get-Item "dist/Galaxy-Wearable-Windows.zip").Length
-          if ($size -lt 1MB) {
-            throw "Galaxy-Wearable-Windows.zip is unexpectedly small ($size bytes); refusing to publish an incomplete app."
+          $nestedZips = Get-ChildItem "dist/GalaxyWearable-Windows/win-x64" -Filter "*.zip" -Recurse -File
+          if ($nestedZips.Count -gt 0) {
+            throw "Publish output contains nested ZIP files; expected loose app files only."
           }
 
-      - name: Upload Windows app ZIP
+      - name: Upload Windows app files as one artifact
         uses: actions/upload-artifact@v7.0.2
         with:
           name: Galaxy-Wearable-Windows
-          path: dist/Galaxy-Wearable-Windows.zip
+          path: dist/GalaxyWearable-Windows/win-x64/
           if-no-files-found: error
           retention-days: 14

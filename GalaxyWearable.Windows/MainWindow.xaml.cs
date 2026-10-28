@@ -378,8 +378,8 @@ public sealed partial class MainWindow : Window
             // Do not invoke Windows pairing or Samsung's new-phone setup flow. Open
             // the currently available BLE services only, preserving the existing S26 bond.
             var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id, selected.DeviceInformationId);
-            _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? selected.Id;
             await SavePairedDeviceAsync(selected);
+            _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? selected.Id;
             _connectionLostDeviceId = null;
             DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed. {protocolReport}";
         }

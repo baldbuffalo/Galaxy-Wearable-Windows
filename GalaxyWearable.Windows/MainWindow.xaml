@@ -133,15 +133,14 @@
                                             Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                             HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Grid>
+                                            <FontIcon Glyph="&#xE7F4;" FontSize="42"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                             <Image Source="{Binding ProductImage}"
                                                    AutomationProperties.Name="{Binding ProductImageDescription}"
                                                    Stretch="Uniform"
                                                    Margin="8" />
-                                            <FontIcon Glyph="&#xE7F4;" FontSize="42"
-                                                      HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"
-                                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                                      Visibility="{Binding ProductImage, Converter={StaticResource NullToVisibilityConverter}}" />
                                         </Grid>
                                     </Border>
 

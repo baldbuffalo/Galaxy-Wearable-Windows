@@ -143,7 +143,7 @@ public sealed class BluetoothDiscoveryService : IDisposable
         // and the older Gear Sport R600; the L7xx family includes Galaxy Watch Ultra.
         var watchBandModelCode =
             System.Text.RegularExpressions.Regex.IsMatch(
-                normalized, @"SM-R(3\d{2}|600|7\d{2}|8\d{2}|9\d{2})",
+                normalized, @"SM-R(3\d{2}|500|600|7\d{2}|8\d{2}|9\d{2})",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase)
             || System.Text.RegularExpressions.Regex.IsMatch(
                 normalized, @"SM-V7\d{2}", System.Text.RegularExpressions.RegexOptions.IgnoreCase)

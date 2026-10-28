@@ -128,13 +128,16 @@ public sealed class BluetoothDiscoveryService : IDisposable
                 || name.Contains("Fit", StringComparison.OrdinalIgnoreCase)
                 || name.Contains("Gear", StringComparison.OrdinalIgnoreCase));
 
-        // Some watches advertise a model number rather than their friendly name.
-        var SamsungWearableModelCode =
-            normalized.Contains("SM-R", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("SM-L", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("SM-W", StringComparison.OrdinalIgnoreCase);
+        // Model-only names need a stricter filter: Samsung also uses SM-R codes
+        // for Galaxy Buds. Watch/band model families use R3xx, R7xx, R8xx, R9xx,
+        // and the older Gear Sport R600; the L7xx family includes Galaxy Watch Ultra.
+        var watchBandModelCode =
+            System.Text.RegularExpressions.Regex.IsMatch(
+                normalized, @"SM-R(3\\d{2}|600|7\\d{2}|8\\d{2}|9\\d{2})",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            || normalized.Contains("SM-L7", StringComparison.OrdinalIgnoreCase);
 
-        return brandAndType || SamsungWearableModelCode;
+        return brandAndType || watchBandModelCode;
     }
 
     private void PublishDevices()

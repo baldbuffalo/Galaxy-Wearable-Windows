@@ -354,7 +354,8 @@ public sealed partial class MainWindow : Window
         }
 
         await Task.Delay(1200);
-        await RestoreSavedDeviceAsync();
+        if (sender.State == RadioState.On)
+            await RestoreSavedDeviceAsync();
     }
 
     private async Task RestoreSavedDeviceAsync()

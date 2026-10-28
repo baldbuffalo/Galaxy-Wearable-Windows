@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     private bool _isRefreshingDevices;
     private string? _connectingDeviceId;
     private string? _connectedDeviceId;
+    private string? _connectionLostDeviceId;
     private Radio? _bluetoothRadio;
     private bool _isRestoringConnection;
     private string SavedDevicePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GalaxyWearableWindows", "paired-device.json");
@@ -322,6 +323,9 @@ public sealed partial class MainWindow : Window
         // GATT session at the same time.
         if (_isRestoringConnection)
         {
+            _isRefreshingDevices = true;
+            try { DevicesList.SelectedItem = null; }
+            finally { _isRefreshingDevices = false; }
             DiscoveryHint.Text = "Reconnecting to your saved wearable. Select a device again when this finishes.";
             return;
         }
@@ -355,6 +359,7 @@ public sealed partial class MainWindow : Window
         }
 
         _connectingDeviceId = selected.Id;
+        _connectionLostDeviceId = null;
         DiscoveryHint.Text = $"Connecting to {selected.Name}…";
 
         try
@@ -364,12 +369,17 @@ public sealed partial class MainWindow : Window
             var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id);
             await SavePairedDeviceAsync(selected);
             _connectedDeviceId = selected.Id;
+            _connectionLostDeviceId = null;
             DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. Existing phone pairing was not changed. {protocolReport}";
         }
         catch (Exception ex)
         {
             _connectedDeviceId = null;
-            DiscoveryHint.Text = $"Couldn't open a BLE session to {selected.Name}. No new-phone setup was started. Details: {ex.Message}";
+            _connectionLostDeviceId = selected.Id;
+            _isRefreshingDevices = true;
+            try { DevicesList.SelectedItem = null; }
+            finally { _isRefreshingDevices = false; }
+            DiscoveryHint.Text = $"Couldn't open a BLE session to {selected.Name}. No new-phone setup was started. Select it to retry. Details: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"BLE connection error: {ex}");
         }
         finally
@@ -440,6 +450,7 @@ public sealed partial class MainWindow : Window
             _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = $"Reconnecting to {saved.Name}…");
             await _connection.ConnectAndInspectAsync(saved.Id);
             _connectedDeviceId = saved.Id;
+            _connectionLostDeviceId = null;
             _dispatcherQueue.TryEnqueue(() => DiscoveryHint.Text = $"Connected to saved wearable {saved.Name}.");
         }
         catch (Exception ex)
@@ -466,6 +477,10 @@ public sealed partial class MainWindow : Window
             if (!connected)
             {
                 _connectedDeviceId = null;
+                _connectionLostDeviceId = address;
+                _isRefreshingDevices = true;
+                try { DevicesList.SelectedItem = null; }
+                finally { _isRefreshingDevices = false; }
                 var name = _devices.GetValueOrDefault(address)?.Name ?? "your wearable";
                 DiscoveryHint.Text = $"Connection to {name} was lost. Select it to reconnect.";
             }
@@ -496,9 +511,15 @@ public sealed partial class MainWindow : Window
 
             DiscoveryHint.Text = _connectedDeviceId is not null
                 ? $"Connected to {_devices.GetValueOrDefault(_connectedDeviceId)?.Name ?? "your wearable"}."
-                : _devices.Count == 0
-                    ? "Choose Find devices to look for nearby Samsung wearables."
-                    : $"Found {_devices.Count} likely Samsung wearable(s). Select a device to connect.";
+                : _connectingDeviceId is not null
+                    ? $"Connecting to {_devices.GetValueOrDefault(_connectingDeviceId)?.Name ?? "your wearable"}…"
+                    : _isRestoringConnection
+                        ? "Reconnecting to your saved wearable…"
+                        : _connectionLostDeviceId is not null
+                            ? $"Connection to {_devices.GetValueOrDefault(_connectionLostDeviceId)?.Name ?? "your saved wearable"} isn't active. Select it to try again."
+                            : _devices.Count == 0
+                                ? "Choose Find devices to look for nearby Samsung wearables."
+                                : $"Found {_devices.Count} likely Samsung wearable(s). Select a device to connect.";
         });
     }
 }

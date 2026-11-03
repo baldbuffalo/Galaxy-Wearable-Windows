@@ -34,14 +34,12 @@ public sealed partial class MainWindow : Window
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
         _connection.ConnectionStateChanged += Connection_ConnectionStateChanged;
-        _connection.ConnectionStageChanged += Connection_ConnectionStageChanged;
         _ = InitializeBluetoothLifecycleAsync();
         Closed += async (_, _) =>
         {
             _isClosed = true;
             _discovery.DevicesChanged -= Discovery_DevicesChanged;
             _connection.ConnectionStateChanged -= Connection_ConnectionStateChanged;
-            _connection.ConnectionStageChanged -= Connection_ConnectionStageChanged;
             if (_bluetoothRadio is not null)
                 _bluetoothRadio.StateChanged -= BluetoothRadio_StateChanged;
             _discovery.Dispose();
@@ -493,13 +491,13 @@ public sealed partial class MainWindow : Window
 
         _connectingDeviceId = selected.Id;
         _connectionLostDeviceId = null;
-        DiscoveryHint.Text = $"Trying the saved Bluetooth identity for {selected.Name} first…";
+        DiscoveryHint.Text = $"Checking {selected.Name} without changing its pairing state…";
 
         try
         {
-            // First reuse the saved Windows BLE identity/address. If that fails,
-            // the service invokes Windows pairing and retries the BLE connection.
-            var protocolReport = await _connection.ConnectWithPairingFallbackAsync(selected.Id, selected.DeviceInformationId);
+            // Open the existing BLE identity/address only. A failed connection
+            // must never trigger pairing: the watch may still belong to another phone.
+            var protocolReport = await _connection.ConnectAndInspectAsync(selected.Id, selected.DeviceInformationId);
             _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? selected.Id;
             _connectionLostDeviceId = null;
 
@@ -525,7 +523,7 @@ public sealed partial class MainWindow : Window
             _isRefreshingDevices = true;
             try { DevicesList.SelectedItem = null; }
             finally { _isRefreshingDevices = false; }
-            DiscoveryHint.Text = $"Couldn't connect to {selected.Name} after the saved-identity attempt and Windows pairing fallback. Select it to retry. Details: {ex.Message}";
+            DiscoveryHint.Text = $"Couldn't connect to {selected.Name}. No pairing or reset was attempted, so its existing phone setup remains untouched. Select it to retry. Details: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"BLE connection error: {ex}");
         }
         finally
@@ -650,15 +648,6 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record SavedWearable(string Name, string Id, string? DeviceInformationId = null);
-
-    private void Connection_ConnectionStageChanged(string message)
-    {
-        _dispatcherQueue.TryEnqueue(() =>
-        {
-            if (!_isClosed)
-                DiscoveryHint.Text = message;
-        });
-    }
 
     private void Connection_ConnectionStateChanged(string address, bool connected)
     {

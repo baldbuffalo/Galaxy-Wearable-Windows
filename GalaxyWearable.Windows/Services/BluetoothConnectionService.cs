@@ -1,6 +1,5 @@
 using System.Globalization;
 using global::Windows.Devices.Bluetooth;
-using global::Windows.Devices.Enumeration;
 using global::Windows.Devices.Bluetooth.GenericAttributeProfile;
 using global::Windows.Storage.Streams;
 
@@ -30,7 +29,6 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
     private static readonly Guid SapNotifyUuid = Guid.Parse("797ae4e9-2e58-4fe8-b48d-b5c79599fb9b");
     private static readonly Guid SapWriteUuid = Guid.Parse("63e30bad-4206-4596-839f-e47cbf7a4b5d");
     public event Action<string, bool>? ConnectionStateChanged;
-    public event Action<string>? ConnectionStageChanged;
 
     public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
     public string? ConnectedBluetoothAddress => _device?.BluetoothAddress.ToString("X12");
@@ -43,93 +41,6 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             return await ConnectAndInspectCoreAsync(bluetoothAddress, deviceInformationId);
-        }
-        finally
-        {
-            _sessionLock.Release();
-        }
-    }
-
-    /// <summary>
-    /// First tries the saved Windows BLE device identity/address. If that route
-    /// fails, asks Windows to pair the selected device, then retries the BLE session.
-    /// This is Windows Bluetooth pairing, not Samsung phone-bond recovery or Samsung setup.
-    /// </summary>
-    public async Task<string> ConnectWithPairingFallbackAsync(string bluetoothAddress, string? deviceInformationId = null)
-    {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        await _sessionLock.WaitAsync();
-        try
-        {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-            try
-            {
-                var report = await ConnectAndInspectCoreAsync(bluetoothAddress, deviceInformationId);
-                ConnectionStageChanged?.Invoke("Connected using the saved Windows Bluetooth identity. No new pairing was needed.");
-                return "Connection route: saved Windows Bluetooth identity/address."
-                    + Environment.NewLine + report;
-            }
-            catch (Exception existingRouteException)
-            {
-                if (string.IsNullOrWhiteSpace(deviceInformationId))
-                    throw new InvalidOperationException(
-                        "The existing BLE connection attempt failed, and Windows did not provide a device identity for the pairing fallback.",
-                        existingRouteException);
-
-                ConnectionStageChanged?.Invoke("The saved BLE connection failed. Starting Windows Bluetooth pairing as the fallback…");
-
-                DeviceInformation deviceInformation;
-                try
-                {
-                    deviceInformation = await DeviceInformation.CreateFromIdAsync(deviceInformationId)
-                        ?? throw new InvalidOperationException("Windows no longer recognizes the selected Bluetooth device.");
-                }
-                catch (Exception lookupException)
-                {
-                    throw new InvalidOperationException(
-                        $"The saved BLE connection failed, and Windows could not reopen the device for pairing: {lookupException.Message}",
-                        new AggregateException(existingRouteException, lookupException));
-                }
-
-                string pairingResultText;
-                if (deviceInformation.Pairing.IsPaired)
-                {
-                    pairingResultText = "Windows already reports this device as paired; no existing bond was removed or replaced.";
-                }
-                else
-                {
-                    if (!deviceInformation.Pairing.CanPair)
-                        throw new InvalidOperationException(
-                            "The saved BLE connection failed, and Windows reports that this device cannot be paired through its standard pairing API.",
-                            existingRouteException);
-
-                    var pairingResult = await deviceInformation.Pairing.PairAsync();
-                    if (pairingResult.Status != DevicePairingResultStatus.Paired
-                        && pairingResult.Status != DevicePairingResultStatus.AlreadyPaired)
-                    {
-                        throw new InvalidOperationException(
-                            $"Windows Bluetooth pairing did not complete: {pairingResult.Status}. The existing BLE attempt also failed: {existingRouteException.Message}");
-                    }
-
-                    pairingResultText = pairingResult.Status == DevicePairingResultStatus.Paired
-                        ? "Windows Bluetooth pairing completed."
-                        : "Windows confirmed that the device is already paired.";
-                }
-
-                ConnectionStageChanged?.Invoke("Windows pairing step finished. Retrying the BLE connection…");
-                try
-                {
-                    var report = await ConnectAndInspectCoreAsync(bluetoothAddress, deviceInformationId);
-                    return "Connection route: Windows pairing fallback. " + pairingResultText
-                        + Environment.NewLine + report;
-                }
-                catch (Exception retryException)
-                {
-                    throw new InvalidOperationException(
-                        $"The existing BLE route failed ({existingRouteException.Message}). The Windows pairing fallback finished ({pairingResultText}), but the BLE retry also failed: {retryException.Message}",
-                        new AggregateException(existingRouteException, retryException));
-                }
-            }
         }
         finally
         {
@@ -242,7 +153,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         }
 
         lines.Add("");
-        lines.Add("• No Windows pairing, watch reset, or first-run setup messages are initiated.");
+        lines.Add("• Watch setup/reset state: UNKNOWN until a documented status response can be decoded.");
+        lines.Add("• No Windows pairing, watch reset, or first-run setup messages are initiated. Pairing must remain blocked unless the watch explicitly reports factory-reset/initial-setup state.");
         lines.Add("• SAP capability negotiation is not a claim that Windows has inherited the phone's Bluetooth bond.");
 
         return string.Join(Environment.NewLine, lines);

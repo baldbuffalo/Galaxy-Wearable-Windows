@@ -14,7 +14,7 @@ A native Windows companion app aiming to support Samsung Galaxy smartwatches and
 ## Current features
 
 - Scan for likely Samsung wearables using advertised names, Samsung manufacturer data, and standard watch metadata.
-- Select a discovered device and first try its saved Windows BLE device identity/address. If that fails, invoke Windows Bluetooth pairing and retry the BLE connection.
+- Select a discovered device and attempt a BLE connection without changing its existing pairing state; connection failure never triggers automatic pairing.
 - Prefer Windows' device identity for reconnection when available, with a Bluetooth-address fallback.
 - Persist the selected BLE address and Windows device identity when available, and attempt to reconnect when Windows Bluetooth is turned back on.
 - Probe documented Fit3 service families and report which vendor-specific channels are visible.
@@ -24,7 +24,7 @@ A native Windows companion app aiming to support Samsung Galaxy smartwatches and
 
 ## Important limitations
 
-The app does **not yet impersonate a Galaxy phone**. The two-stage flow currently means: (1) try the saved Windows BLE identity/address, then (2) if that fails, use Windows' standard Bluetooth pairing API and retry. This does not copy the S26's Bluetooth bond, perform Samsung bond-loss recovery, or send Samsung's `NEW_PHONE` companion command. It does not reset the watch or launch Samsung's first-run setup. Reconnection is best-effort and not yet verified on a physical Fit3. Samsung companion authentication, proprietary accessory-protocol handshakes, bonded data channels, notifications/settings sync, health history, and firmware updates remain unimplemented.
+The app does **not yet impersonate a Galaxy phone**. It attempts a BLE connection without changing the watch's pairing state. A failed connection is not treated as proof that the watch is reset: the watch may still be paired to another phone that is temporarily offline or has Bluetooth disabled. The app must first obtain a reliable, explicit watch setup-state response. Until that reset/initial-setup state is positively identified, it must not invoke Windows pairing or Samsung's `NEW_PHONE` companion command. This does not copy the S26's Bluetooth bond or perform Samsung bond-loss recovery. Reconnection is best-effort and not yet verified on a physical Fit3. Samsung companion authentication, proprietary accessory-protocol handshakes, bonded data channels, notifications/settings sync, health history, and firmware updates remain unimplemented.
 
 Samsung watches do not all expose identical services or use identical pairing flows. Support must be verified per device family and firmware; the Fit3 is our first test target. Public Fit3 reverse-engineering notes indicate that some proprietary channels are bond-gated. Windows cannot automatically reuse the S26's Bluetooth bond, and this app does not claim full phone-like pairing.
 

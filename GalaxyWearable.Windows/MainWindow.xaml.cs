@@ -21,7 +21,6 @@ public sealed partial class MainWindow : Window
     private string? _connectingDeviceId;
     private string? _connectedDeviceId;
     private string? _connectionLostDeviceId;
-    private Radio? _bluetoothRadio;
     private bool _isClosed;
 
     public MainWindow()
@@ -37,8 +36,6 @@ public sealed partial class MainWindow : Window
             _isClosed = true;
             _discovery.DevicesChanged -= Discovery_DevicesChanged;
             _connection.ConnectionStateChanged -= Connection_ConnectionStateChanged;
-            if (_bluetoothRadio is not null)
-                _bluetoothRadio.StateChanged -= BluetoothRadio_StateChanged;
             _discovery.Dispose();
 
             try

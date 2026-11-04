@@ -23,6 +23,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
     private int _sapTransportMtu;
     private int _sapHandshakeStarted;
     private bool _sapWatchInfoRequestSent;
+    private volatile bool _sapWatchInfoResponseReceived;
+    private volatile bool _sapDeviceStatusRequestSent;
     private int _disposed;
 
     private static readonly Guid SapServiceUuid = Guid.Parse("00001a1a-0000-1000-8000-00805f9b34fb");
@@ -200,6 +202,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         Volatile.Write(ref _sapHandshakeStarted, 0);
         _sapTransportMtu = 0;
         _sapWatchInfoRequestSent = false;
+        _sapWatchInfoResponseReceived = false;
+        _sapDeviceStatusRequestSent = false;
         _sapHandshakeCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _sapResponseReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
@@ -232,12 +236,17 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
             return GetSapDiagnosticsSnapshot();
         }
 
-        // Wait for a real response rather than returning before the band has time to reply.
+        // Wait for the documented read-only OOBE Device Status response.
+        // The status query is sent only after a valid WatchInfo response.
         if (_sapWatchInfoRequestSent)
         {
             var responseTask = _sapResponseReceived?.Task;
-            if (responseTask is not null && await Task.WhenAny(responseTask, Task.Delay(TimeSpan.FromSeconds(3))) != responseTask)
-                AddSapDiagnostic("• No valid SAP frame response arrived within 3 seconds of the WatchInfo request.");
+            if (responseTask is not null && await Task.WhenAny(responseTask, Task.Delay(TimeSpan.FromSeconds(5))) != responseTask)
+            {
+                AddSapDiagnostic(!_sapWatchInfoResponseReceived
+                    ? "• No WatchInfo response arrived within 5 seconds; Device Status was not requested."
+                    : "• WatchInfo succeeded, but no Device Status response arrived within 5 seconds.");
+            }
         }
         return GetSapDiagnosticsSnapshot();
     }
@@ -260,12 +269,22 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
             {
                 var hex = Convert.ToHexString(message);
                 AddSapDiagnostic($"• SAP frame received from service {serviceId}: {hex}");
-                _sapResponseReceived?.TrySetResult(true);
 
-                var ascii = System.Text.Encoding.ASCII.GetString(message);
-                var firmwareMatch = System.Text.RegularExpressions.Regex.Match(ascii, @"R390[A-Z0-9]{7,12}");
-                if (firmwareMatch.Success)
-                    AddSapDiagnostic($"• Fit3 firmware reported by WatchInfo: {firmwareMatch.Value}");
+                if (serviceId == 1 && message.Length > 0 && message[0] == 0x41)
+                {
+                    _sapWatchInfoResponseReceived = true;
+                    var ascii = System.Text.Encoding.ASCII.GetString(message);
+                    var firmwareMatch = System.Text.RegularExpressions.Regex.Match(ascii, @"R390[A-Z0-9]{7,12}");
+                    if (firmwareMatch.Success)
+                        AddSapDiagnostic($"• Fit3 firmware reported by WatchInfo: {firmwareMatch.Value}");
+
+                    await SendSapDeviceStatusRequestAsync();
+                }
+                else if (serviceId == 1 && message.Length > 0 && message[0] == 0x42)
+                {
+                    AddSapDiagnostic("• Read-only OOBE Device Status response received. Raw response retained above; status fields are not yet decoded.");
+                    _sapResponseReceived?.TrySetResult(true);
+                }
             }
             else
             {
@@ -327,6 +346,29 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         }
 
         _sapHandshakeCompleted?.TrySetResult(true);
+    }
+
+    private async Task SendSapDeviceStatusRequestAsync()
+    {
+        if (_sapDeviceStatusRequestSent || _sapTransportMtu < 17)
+            return;
+
+        _sapDeviceStatusRequestSent = true;
+        // OOBE message 2 is a documented status query. It does not send
+        // locale/time initialization, user agreement, reset, or new-phone data.
+        byte[] deviceStatusRequest = { 0x02, 0x01, 0x00 };
+        try
+        {
+            var frame = EncodeSapSingleFrame(1, deviceStatusRequest, _sapTransportMtu);
+            var status = await WriteSapBytesAsync(frame);
+            AddSapDiagnostic(status == GattCommunicationStatus.Success
+                ? "• Sent the documented read-only OOBE Device Status query."
+                : $"• Device Status query write failed: {status}.");
+        }
+        catch (Exception ex)
+        {
+            AddSapDiagnostic($"• Device Status query could not be encoded or written: {ex.Message}");
+        }
     }
 
     private async Task<GattCommunicationStatus> WriteSapBytesAsync(byte[] bytes)
@@ -532,6 +574,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _sapResponseReceived = null;
         Volatile.Write(ref _sapHandshakeStarted, 0);
         _sapWatchInfoRequestSent = false;
+        _sapWatchInfoResponseReceived = false;
+        _sapDeviceStatusRequestSent = false;
         _sapTransportMtu = 0;
         lock (_sapDiagnostics)
             _sapDiagnostics.Clear();
@@ -593,6 +637,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _sapResponseReceived = null;
         Volatile.Write(ref _sapHandshakeStarted, 0);
         _sapWatchInfoRequestSent = false;
+        _sapWatchInfoResponseReceived = false;
+        _sapDeviceStatusRequestSent = false;
         _sapTransportMtu = 0;
 
         foreach (var service in _services)

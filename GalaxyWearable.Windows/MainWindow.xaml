@@ -146,7 +146,9 @@
 
                 <ListView x:Name="DevicesList" Grid.Row="1"
                           SelectionMode="Single"
-                          SelectionChanged="DevicesList_SelectionChanged"
+                          IsItemClickEnabled="True"
+                          ItemClick="DevicesList_ItemClick"
+                          SelectionMode="None"
                           Background="Transparent"
                           BorderThickness="0"
                           Padding="0,8,0,0">

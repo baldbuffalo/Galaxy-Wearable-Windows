@@ -235,7 +235,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
                 GattProtectionLevel.EncryptionAndAuthenticationRequired;
             _sapWriteCharacteristic.ProtectionLevel =
                 GattProtectionLevel.EncryptionAndAuthenticationRequired;
-            AddSapDiagnostic("• Requested Windows GATT security: encryption + authentication for both SAP characteristics. Windows may show its Bluetooth authentication prompt.");
+            AddSapDiagnostic("• Requested Windows GATT security: encryption + authentication for both SAP characteristics. Windows will use its own OS-managed Bluetooth security state; this does not import the S26 bond.");
         }
         catch (Exception ex)
         {
@@ -250,34 +250,38 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic.ValueChanged += SapNotifyCharacteristic_ValueChanged;
 
-        GattCommunicationStatus notifyStatus;
+        GattWriteResult notifyResult;
         try
         {
-            notifyStatus = await _sapNotifyCharacteristic
-                .WriteClientCharacteristicConfigurationDescriptorAsync(
+            notifyResult = await _sapNotifyCharacteristic
+                .WriteClientCharacteristicConfigurationDescriptorWithResultAsync(
                     GattClientCharacteristicConfigurationDescriptorValue.Notify);
         }
         catch (Exception ex)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
-
-            if (unchecked((uint)ex.HResult) == 0x80650005)
-            {
-                return new[]
-                {
-                    "• SAP notification subscription requires GATT authentication (ATT_INSUFFICIENT_AUTHENTICATION, 0x80650005).",
-                    "• Windows attempted the requested authenticated GATT access, but the current link still does not meet the watch's security requirement.",
-                    "• No Samsung NEW_PHONE, reset, or first-run setup messages were sent. Check whether Windows displayed a Bluetooth authentication prompt and whether it completed."
-                };
-            }
-
-            return new[] { $"• Enabling SAP notifications threw an error: {DescribeException(ex)}" };
+            return new[] { $"• Enabling SAP notifications threw a Windows GATT error: {DescribeException(ex)}" };
         }
 
-        if (notifyStatus != GattCommunicationStatus.Success)
+        if (notifyResult.Status != GattCommunicationStatus.Success)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
-            return new[] { $"• Could not enable SAP notifications: {notifyStatus}." };
+
+            var protocolErrorText = notifyResult.ProtocolError is byte protocolError
+                ? protocolError switch
+                {
+                    0x05 => "0x05 (ATT_INSUFFICIENT_AUTHENTICATION)",
+                    0x0F => "0x0F (ATT_INSUFFICIENT_ENCRYPTION)",
+                    _ => $"0x{protocolError:X2}"
+                }
+                : "not supplied by Windows";
+
+            return new[]
+            {
+                $"• Could not enable SAP notifications: {notifyResult.Status}.",
+                $"  ATT protocol error: {protocolErrorText}.",
+                "• No Samsung NEW_PHONE, reset, or first-run setup messages were sent."
+            };
         }
 
         AddSapDiagnostic("• Subscribed to the documented SAP notification characteristic.");

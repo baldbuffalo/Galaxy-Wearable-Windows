@@ -234,6 +234,10 @@ public sealed class BluetoothDiscoveryService : IDisposable
                 existing.DeviceInformationId));
 
         PublishDevices();
+
+        // Stop active discovery as soon as the first likely Samsung wearable
+        // is found. The UI can still enumerate already-known Windows devices.
+        Stop();
     }
 
     private static bool HasWatchAppearance(BluetoothLEAdvertisement advertisement)

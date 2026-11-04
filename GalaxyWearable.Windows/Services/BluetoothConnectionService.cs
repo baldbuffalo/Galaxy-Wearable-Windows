@@ -156,7 +156,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
 
         lines.Add("");
         lines.Add("• Watch setup/reset state: UNKNOWN until a documented status response can be decoded.");
-        lines.Add("• No Windows pairing, watch reset, or first-run setup messages are initiated. Pairing must remain blocked unless the watch explicitly reports factory-reset/initial-setup state.");
+        lines.Add("• Windows GATT authentication may be requested for SAP when you explicitly select this watch. The app does not send Samsung NEW_PHONE, watch-reset, or first-run setup messages.");
         lines.Add("• SAP capability negotiation is not a claim that Windows has inherited the phone's Bluetooth bond.");
 
         return string.Join(Environment.NewLine, lines);
@@ -224,6 +224,29 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _sapDeviceStatusRequestSent = false;
         _sapHandshakeCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _sapResponseReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Ask Windows to negotiate an encrypted and authenticated BLE link for
+        // the protected SAP attributes. This may trigger the normal Windows
+        // Bluetooth pairing/authentication UI. It does not send Samsung
+        // NEW_PHONE, reset, or first-run setup messages.
+        try
+        {
+            _sapNotifyCharacteristic.ProtectionLevel =
+                GattProtectionLevel.EncryptionAndAuthenticationRequired;
+            _sapWriteCharacteristic.ProtectionLevel =
+                GattProtectionLevel.EncryptionAndAuthenticationRequired;
+            AddSapDiagnostic("• Requested Windows GATT security: encryption + authentication for both SAP characteristics. Windows may show its Bluetooth authentication prompt.");
+        }
+        catch (Exception ex)
+        {
+            return new[]
+            {
+                "• Windows could not apply the requested SAP GATT protection level.",
+                $"  {DescribeException(ex)}",
+                "• No Samsung pairing, reset, or new-phone setup messages were sent."
+            };
+        }
+
         _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic.ValueChanged += SapNotifyCharacteristic_ValueChanged;
 
@@ -243,8 +266,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
                 return new[]
                 {
                     "• SAP notification subscription requires GATT authentication (ATT_INSUFFICIENT_AUTHENTICATION, 0x80650005).",
-                    "• The current BLE session is not authenticated for this protected attribute. Service discovery succeeded, but the watch requires an authenticated link before notifications can be enabled.",
-                    "• No pairing request, bond change, reset, or new-phone setup was attempted. The existing phone pairing was left untouched."
+                    "• Windows attempted the requested authenticated GATT access, but the current link still does not meet the watch's security requirement.",
+                    "• No Samsung NEW_PHONE, reset, or first-run setup messages were sent. Check whether Windows displayed a Bluetooth authentication prompt and whether it completed."
                 };
             }
 

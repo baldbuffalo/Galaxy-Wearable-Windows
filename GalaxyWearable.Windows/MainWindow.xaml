@@ -51,9 +51,13 @@
                         Padding="12,11"
                         MinWidth="0"
                         CornerRadius="9"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        Background="Transparent"
+                        BorderBrush="Transparent"
                         BorderThickness="1"
+                        PointerEntered="CompanionButton_PointerEntered"
+                        PointerExited="CompanionButton_PointerExited"
+                        PointerPressed="CompanionButton_PointerPressed"
+                        PointerReleased="CompanionButton_PointerReleased"
                         Click="OpenUpdates_Click"
                         AutomationProperties.Name="Galaxy Wearable Windows companion, open software updates">
                     <StackPanel Spacing="5">
@@ -124,10 +128,12 @@
                     </Border>
                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                         <TextBlock Text="Nearby devices" FontSize="15" FontWeight="SemiBold" />
-                        <ScrollViewer MaxHeight="150"
+                        <ScrollViewer MaxHeight="360"
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
                             <TextBlock x:Name="DiscoveryHint"
+                                       FontSize="12"
+                                       IsTextSelectionEnabled="True"
                                        Text="Choose Find devices to look for nearby Samsung wearables."
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap" />

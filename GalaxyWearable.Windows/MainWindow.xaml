@@ -145,7 +145,6 @@
                            VerticalAlignment="Center" />
 
                 <ListView x:Name="DevicesList" Grid.Row="1"
-                          SelectionMode="Single"
                           IsItemClickEnabled="True"
                           ItemClick="DevicesList_ItemClick"
                           SelectionMode="None"

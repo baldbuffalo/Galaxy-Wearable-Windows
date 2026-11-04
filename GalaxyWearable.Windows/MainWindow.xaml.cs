@@ -353,6 +353,30 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void CompanionButton_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button button)
+            button.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+    }
+
+    private void CompanionButton_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button button)
+            button.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+    }
+
+    private void CompanionButton_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button button)
+            button.Background = (Brush)Application.Current.Resources["AccentFillColorSecondaryBrush"];
+    }
+
+    private void CompanionButton_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button button)
+            button.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+    }
+
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isClosed)
@@ -416,6 +440,11 @@ public sealed partial class MainWindow : Window
             {
                 ScanButton.Content = "Stop scanning";
                 DiscoveryHint.Text = "Looking for nearby Samsung Galaxy watches and bands…";
+            }
+            else if (_devices.Count > 0)
+            {
+                ScanButton.Content = "Find devices";
+                DiscoveryHint.Text = $"Found {_devices.Count} likely Samsung wearable(s). Scanning stopped automatically. Click a device to connect.";
             }
             else
             {
@@ -556,6 +585,12 @@ public sealed partial class MainWindow : Window
             finally
             {
                 _isRefreshingDevices = false;
+            }
+
+            if (_devices.Count > 0 && _discovery.IsScanning)
+            {
+                _discovery.Stop();
+                ScanButton.Content = "Find devices";
             }
 
             DiscoveryHint.Text = _connectedDeviceId is not null

@@ -73,12 +73,15 @@ public sealed class BluetoothDiscoveryService : IDisposable
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         }
 
-        if (!IsScanning)
+        if (!IsScanning && _devices.IsEmpty)
         {
             var detail = LastStopError is null ? string.Empty : $" Windows reported: {LastStopError}.";
             throw new InvalidOperationException(
                 $"Bluetooth LE watcher did not enter the Started state (status: {_watcher.Status}).{detail}");
         }
+
+        // A watcher stopped by OnAdvertisementReceived means discovery succeeded:
+        // the first likely wearable was found and scanning was intentionally stopped.
     }
 
     public void Stop()

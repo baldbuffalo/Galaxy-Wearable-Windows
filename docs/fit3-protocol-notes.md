@@ -30,7 +30,7 @@ The public [Fit3Bridge protocol reference](https://github.com/GokulArumugam/Fit3
 - After a successful capability reply, the app sends a framed, read-only WatchInfo request (SAP service 1, message `01 04 02 00 00 00 05 00 0e`) and logs valid single-frame responses, including a firmware identifier if present.
 - Frame encoding/decoding validates the documented CRC-16/ARC framing.
 
-This is the **SAP transport capability handshake**, not proof of phone identity or a universal authentication bypass. The protocol reference says there is no additional application-level cryptography in this transport handshake; BLE bond requirements and firmware-specific access restrictions are separate. The app deliberately does not send the remaining OOBE setup messages (device status, locale/time initialization, or user agreement), and does not invoke Windows pairing or reset the watch.
+This is the **SAP transport capability handshake**, not proof of phone identity or a universal authentication bypass. The protocol reference says there is no additional application-level cryptography in this transport handshake; BLE bond requirements and firmware-specific access restrictions are separate. After receiving the WatchInfo response, the app now sends the documented OOBE Device Status query (`02 01 00`) and records the `0x42` response as raw bytes. This is a read-only status request; its fields are not yet decoded and it is not treated as proof of the previously paired phone. The app does not send locale/time initialization or user-agreement messages, and does not invoke Windows pairing or reset the watch.
 
 ## What this Windows app now does
 

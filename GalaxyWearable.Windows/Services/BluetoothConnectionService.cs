@@ -151,7 +151,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            lines.Add($"• SAP probe failed without starting pairing/setup: {ex.Message}");
+            lines.Add($"• SAP probe failed without starting pairing/setup: {DescribeException(ex)}");
         }
 
         lines.Add("");
@@ -160,6 +160,24 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         lines.Add("• SAP capability negotiation is not a claim that Windows has inherited the phone's Bluetooth bond.");
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string DescribeException(Exception ex)
+    {
+        var message = string.IsNullOrWhiteSpace(ex.Message)
+            ? "(Windows provided no exception message)"
+            : ex.Message.Trim();
+        var details = $"{ex.GetType().FullName ?? ex.GetType().Name}; HRESULT=0x{ex.HResult:X8}; Message={message}";
+
+        if (ex.InnerException is not null)
+        {
+            var innerMessage = string.IsNullOrWhiteSpace(ex.InnerException.Message)
+                ? "(no message)"
+                : ex.InnerException.Message.Trim();
+            details += $" | Inner={ex.InnerException.GetType().FullName ?? ex.InnerException.GetType().Name}; HRESULT=0x{ex.InnerException.HResult:X8}; Message={innerMessage}";
+        }
+
+        return details;
     }
 
     private async Task<IReadOnlyList<string>> StartSapSessionAsync()
@@ -175,7 +193,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            return new[] { $"• SAP characteristic discovery threw an error: {ex.Message}" };
+            return new[] { $"• SAP characteristic discovery threw an error: {DescribeException(ex)}" };
         }
 
         if (result.Status != GattCommunicationStatus.Success)
@@ -219,7 +237,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         catch (Exception ex)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
-            return new[] { $"• Enabling SAP notifications threw an error: {ex.Message}" };
+            return new[] { $"• Enabling SAP notifications threw an error: {DescribeException(ex)}" };
         }
 
         if (notifyStatus != GattCommunicationStatus.Success)

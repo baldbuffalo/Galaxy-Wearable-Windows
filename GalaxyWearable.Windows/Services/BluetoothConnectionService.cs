@@ -12,6 +12,8 @@ namespace GalaxyWearable.Windows.Services;
 public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
 {
     private BluetoothLEDevice? _device;
+    private GattSession? _gattSession;
+    private string? _gattSessionSetupNote;
     private readonly List<GattDeviceService> _services = new();
     private GattCharacteristic? _sapNotifyCharacteristic;
     private GattCharacteristic? _sapWriteCharacteristic;
@@ -82,6 +84,30 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _device.ConnectionStatusChanged -= Device_ConnectionStatusChanged;
         _device.ConnectionStatusChanged += Device_ConnectionStatusChanged;
 
+        // Keep a Windows GATT session alive across discovery and SAP CCCD setup.
+        // This does not pair, unpair, reset, or replace the phone's bond.
+        try
+        {
+            _gattSession = await GattSession.FromDeviceIdAsync(_device.BluetoothDeviceId);
+            if (_gattSession is null)
+            {
+                _gattSessionSetupNote = "Windows did not provide a GATT session.";
+            }
+            else if (_gattSession.CanMaintainConnection)
+            {
+                _gattSession.MaintainConnection = true;
+                _gattSessionSetupNote = "Requested a maintained GATT connection through Windows.";
+            }
+            else
+            {
+                _gattSessionSetupNote = "Windows GATT session does not support MaintainConnection for this device.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _gattSessionSetupNote = $"Could not initialize a maintained GATT session: {DescribeException(ex)}";
+        }
+
         try
         {
             var result = await _device.GetGattServicesAsync(BluetoothCacheMode.Uncached);
@@ -105,6 +131,9 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
             "",
             "Services and characteristics:"
         };
+        if (!string.IsNullOrWhiteSpace(_gattSessionSetupNote))
+            lines.Add($"• GATT session: {_gattSessionSetupNote}");
+        lines.Add(GetGattLinkSnapshot("After service discovery"));
 
         foreach (var service in _services)
         {
@@ -224,6 +253,7 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _sapDeviceStatusRequestSent = false;
         _sapHandshakeCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _sapResponseReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var linkBeforeCccd = GetGattLinkSnapshot("Immediately before SAP CCCD write");
 
         // Ask Windows to negotiate an encrypted and authenticated BLE link for
         // the protected SAP attributes. This may trigger the normal Windows
@@ -260,9 +290,15 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         catch (Exception ex)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
-            return new[] { $"• Enabling SAP notifications threw a Windows GATT error: {DescribeException(ex)}" };
+            return new[]
+            {
+                linkBeforeCccd,
+                GetGattLinkSnapshot("After SAP CCCD exception"),
+                $"• Enabling SAP notifications threw a Windows GATT error: {DescribeException(ex)}"
+            };
         }
 
+        var linkAfterCccd = GetGattLinkSnapshot("Immediately after SAP CCCD write");
         if (notifyResult.Status != GattCommunicationStatus.Success)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
@@ -278,12 +314,15 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
 
             return new[]
             {
+                linkBeforeCccd,
                 $"• Could not enable SAP notifications: {notifyResult.Status}.",
                 $"  ATT protocol error: {protocolErrorText}.",
+                linkAfterCccd,
                 "• No Samsung NEW_PHONE, reset, or first-run setup messages were sent."
             };
         }
 
+        AddSapDiagnostic(linkAfterCccd);
         AddSapDiagnostic("• Subscribed to the documented SAP notification characteristic.");
         var completed = await Task.WhenAny(_sapHandshakeCompleted.Task, Task.Delay(TimeSpan.FromSeconds(6)));
         if (completed != _sapHandshakeCompleted.Task)
@@ -537,6 +576,36 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
             sender.ConnectionStatus == BluetoothConnectionStatus.Connected);
     }
 
+    private string GetGattLinkSnapshot(string stage)
+    {
+        var bleStatus = _device?.ConnectionStatus.ToString() ?? "Unavailable";
+        if (_gattSession is null)
+            return $"• {stage}: BLE={bleStatus}; GATT session unavailable.";
+
+        return $"• {stage}: BLE={bleStatus}; GATT session={_gattSession.SessionStatus}; " +
+               $"CanMaintainConnection={_gattSession.CanMaintainConnection}; " +
+               $"MaintainConnection={_gattSession.MaintainConnection}; ATT MTU={_gattSession.MaxPduSize}.";
+    }
+
+    private void DisposeGattSession()
+    {
+        if (_gattSession is null)
+            return;
+
+        try
+        {
+            _gattSession.MaintainConnection = false;
+        }
+        catch
+        {
+            // Disposal must continue even if Windows has already closed the session.
+        }
+
+        _gattSession.Dispose();
+        _gattSession = null;
+        _gattSessionSetupNote = null;
+    }
+
     private void AddSapDiagnostic(string message)
     {
         lock (_sapDiagnostics)
@@ -620,6 +689,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
 
     private Task DisconnectCoreAsync()
     {
+        DisposeGattSession();
+
         if (_sapNotifyCharacteristic is not null)
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;
@@ -683,6 +754,8 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
 
     private void CleanupResources()
     {
+        DisposeGattSession();
+
         if (_sapNotifyCharacteristic is not null)
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic = null;

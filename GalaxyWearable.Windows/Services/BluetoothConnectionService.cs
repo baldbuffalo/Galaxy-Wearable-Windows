@@ -237,6 +237,17 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         catch (Exception ex)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
+
+            if (unchecked((uint)ex.HResult) == 0x80650005)
+            {
+                return new[]
+                {
+                    "• SAP notification subscription requires GATT authentication (ATT_INSUFFICIENT_AUTHENTICATION, 0x80650005).",
+                    "• The current BLE session is not authenticated for this protected attribute. Service discovery succeeded, but the watch requires an authenticated link before notifications can be enabled.",
+                    "• No pairing request, bond change, reset, or new-phone setup was attempted. The existing phone pairing was left untouched."
+                };
+            }
+
             return new[] { $"• Enabling SAP notifications threw an error: {DescribeException(ex)}" };
         }
 

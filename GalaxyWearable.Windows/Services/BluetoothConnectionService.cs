@@ -280,12 +280,12 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
         _sapNotifyCharacteristic.ValueChanged += SapNotifyCharacteristic_ValueChanged;
 
-        GattWriteResult notifyResult;
+        // The CCCD is a separate GATT descriptor. Set its security requirement
+        // explicitly rather than assuming the characteristic setting covers it.
+        GattDescriptorsResult descriptorResult;
         try
         {
-            notifyResult = await _sapNotifyCharacteristic
-                .WriteClientCharacteristicConfigurationDescriptorWithResultAsync(
-                    GattClientCharacteristicConfigurationDescriptorValue.Notify);
+            descriptorResult = await _sapNotifyCharacteristic.GetDescriptorsAsync(BluetoothCacheMode.Uncached);
         }
         catch (Exception ex)
         {
@@ -293,37 +293,98 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
             return new[]
             {
                 linkBeforeCccd,
-                GetGattLinkSnapshot("After SAP CCCD exception"),
-                $"• Enabling SAP notifications threw a Windows GATT error: {DescribeException(ex)}"
+                $"• SAP descriptor discovery threw a Windows GATT error: {DescribeException(ex)}"
             };
         }
 
-        var linkAfterCccd = GetGattLinkSnapshot("Immediately after SAP CCCD write");
-        if (notifyResult.Status != GattCommunicationStatus.Success)
+        if (descriptorResult.Status != GattCommunicationStatus.Success)
         {
             _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
-
-            var protocolErrorText = notifyResult.ProtocolError is byte protocolError
-                ? protocolError switch
-                {
-                    0x05 => "0x05 (ATT_INSUFFICIENT_AUTHENTICATION)",
-                    0x0F => "0x0F (ATT_INSUFFICIENT_ENCRYPTION)",
-                    _ => $"0x{protocolError:X2}"
-                }
-                : "not supplied by Windows";
-
             return new[]
             {
                 linkBeforeCccd,
-                $"• Could not enable SAP notifications: {notifyResult.Status}.",
-                $"  ATT protocol error: {protocolErrorText}.",
-                linkAfterCccd,
-                "• No Samsung NEW_PHONE, reset, or first-run setup messages were sent."
+                $"• SAP descriptor discovery failed: {descriptorResult.Status}.",
+                $"  ATT protocol error: {DescribeGattProtocolError(descriptorResult.ProtocolError)}"
             };
         }
 
+        var cccdUuid = Guid.Parse("00002902-0000-1000-8000-00805f9b34fb");
+        var cccd = descriptorResult.Descriptors.FirstOrDefault(item => item.Uuid == cccdUuid);
+        AddSapDiagnostic($"• SAP notify characteristic exposes {descriptorResult.Descriptors.Count} descriptor(s).");
+        foreach (var descriptor in descriptorResult.Descriptors)
+            AddSapDiagnostic($"  Descriptor {descriptor.Uuid}; handle=0x{descriptor.AttributeHandle:X4}.");
+
+        if (cccd is null)
+        {
+            _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
+            AddSapDiagnostic("• The SAP notify characteristic did not expose the standard Client Characteristic Configuration Descriptor (0x2902).");
+            return GetSapDiagnosticsSnapshot();
+        }
+
+        try
+        {
+            cccd.ProtectionLevel = GattProtectionLevel.EncryptionAndAuthenticationRequired;
+            AddSapDiagnostic($"• Requested encryption + authentication on CCCD handle 0x{cccd.AttributeHandle:X4}.");
+        }
+        catch (Exception ex)
+        {
+            _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
+            AddSapDiagnostic($"• Could not set CCCD protection level: {DescribeException(ex)}");
+            return GetSapDiagnosticsSnapshot();
+        }
+
+        // A CCCD read is non-mutating and tells us whether Windows can reach
+        // this descriptor independently of the notification-enable write.
+        try
+        {
+            var cccdRead = await cccd.ReadValueAsync(BluetoothCacheMode.Uncached);
+            if (cccdRead.Status == GattCommunicationStatus.Success && cccdRead.Value is not null)
+            {
+                using var reader = DataReader.FromBuffer(cccdRead.Value);
+                var bytes = new byte[reader.UnconsumedBufferLength];
+                reader.ReadBytes(bytes);
+                AddSapDiagnostic($"• CCCD read succeeded: {Convert.ToHexString(bytes)}.");
+            }
+            else
+            {
+                AddSapDiagnostic($"• CCCD read returned {cccdRead.Status}; ATT protocol error: {DescribeGattProtocolError(cccdRead.ProtocolError)}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddSapDiagnostic($"• CCCD read threw a Windows GATT error: {DescribeException(ex)}");
+        }
+
+        GattWriteResult cccdWriteResult;
+        try
+        {
+            using var writer = new DataWriter();
+            writer.WriteUInt16(1); // 0x0001 = notifications enabled
+            cccdWriteResult = await cccd.WriteValueWithResultAsync(writer.DetachBuffer());
+        }
+        catch (Exception ex)
+        {
+            _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
+            AddSapDiagnostic(linkBeforeCccd);
+            AddSapDiagnostic(GetGattLinkSnapshot("After direct CCCD write exception"));
+            AddSapDiagnostic($"• Direct CCCD write threw a Windows GATT error: {DescribeException(ex)}");
+            return GetSapDiagnosticsSnapshot();
+        }
+
+        var linkAfterCccd = GetGattLinkSnapshot("Immediately after direct SAP CCCD write");
+        if (cccdWriteResult.Status != GattCommunicationStatus.Success)
+        {
+            _sapNotifyCharacteristic.ValueChanged -= SapNotifyCharacteristic_ValueChanged;
+            AddSapDiagnostic(linkBeforeCccd);
+            AddSapDiagnostic($"• Direct CCCD write failed: {cccdWriteResult.Status}.");
+            AddSapDiagnostic($"  ATT protocol error: {DescribeGattProtocolError(cccdWriteResult.ProtocolError)}");
+            AddSapDiagnostic(linkAfterCccd);
+            AddSapDiagnostic("• No Samsung NEW_PHONE, reset, or first-run setup messages were sent.");
+            return GetSapDiagnosticsSnapshot();
+        }
+
         AddSapDiagnostic(linkAfterCccd);
-        AddSapDiagnostic("• Subscribed to the documented SAP notification characteristic.");
+        AddSapDiagnostic("• Subscribed to the documented SAP notification characteristic by writing its CCCD.");
         var completed = await Task.WhenAny(_sapHandshakeCompleted.Task, Task.Delay(TimeSpan.FromSeconds(6)));
         if (completed != _sapHandshakeCompleted.Task)
         {
@@ -574,6 +635,25 @@ public sealed class BluetoothConnectionService : IDisposable, IAsyncDisposable
         ConnectionStateChanged?.Invoke(
             sender.BluetoothAddress.ToString("X12"),
             sender.ConnectionStatus == BluetoothConnectionStatus.Connected);
+    }
+
+    private static string DescribeGattProtocolError(byte? protocolError)
+    {
+        if (protocolError is not byte error)
+            return "not supplied by Windows";
+
+        var description = error switch
+        {
+            0x01 => "ATT_INVALID_HANDLE",
+            0x02 => "ATT_READ_NOT_PERMITTED",
+            0x03 => "ATT_WRITE_NOT_PERMITTED",
+            0x05 => "ATT_INSUFFICIENT_AUTHENTICATION",
+            0x08 => "ATT_INSUFFICIENT_AUTHORIZATION",
+            0x0F => "ATT_INSUFFICIENT_ENCRYPTION",
+            _ => "unmapped ATT error"
+        };
+
+        return $"0x{error:X2} ({description})";
     }
 
     private string GetGattLinkSnapshot(string stage)

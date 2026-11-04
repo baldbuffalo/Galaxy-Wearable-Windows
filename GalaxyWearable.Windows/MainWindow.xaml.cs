@@ -22,9 +22,7 @@ public sealed partial class MainWindow : Window
     private string? _connectedDeviceId;
     private string? _connectionLostDeviceId;
     private Radio? _bluetoothRadio;
-    private bool _isRestoringConnection;
     private bool _isClosed;
-    private string SavedDevicePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GalaxyWearableWindows", "paired-device.json");
 
     public MainWindow()
     {
@@ -34,7 +32,6 @@ public sealed partial class MainWindow : Window
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _discovery.DevicesChanged += Discovery_DevicesChanged;
         _connection.ConnectionStateChanged += Connection_ConnectionStateChanged;
-        _ = InitializeBluetoothLifecycleAsync();
         Closed += async (_, _) =>
         {
             _isClosed = true;
@@ -445,21 +442,10 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void DevicesList_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    private async void DevicesList_ItemClick(object sender, Microsoft.UI.Xaml.Controls.ItemClickEventArgs e)
     {
-        if (_isRefreshingDevices || DevicesList.SelectedItem is not WearableDevice selected)
+        if (e.ClickedItem is not WearableDevice selected)
             return;
-
-        // Startup auto-reconnect and a manual selection must not mutate the same
-        // GATT session at the same time.
-        if (_isRestoringConnection)
-        {
-            _isRefreshingDevices = true;
-            try { DevicesList.SelectedItem = null; }
-            finally { _isRefreshingDevices = false; }
-            DiscoveryHint.Text = "Reconnecting to your saved wearable. Select a device again when this finishes.";
-            return;
-        }
 
         if (_connectedDeviceId == selected.Id && _connection.IsConnected)
         {
@@ -501,29 +487,13 @@ public sealed partial class MainWindow : Window
             _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? selected.Id;
             _connectionLostDeviceId = null;
 
-            var saveWarning = string.Empty;
-            try
-            {
-                await SavePairedDeviceAsync(selected);
-            }
-            catch (Exception saveException)
-            {
-                // A settings-folder write failure must not misreport an active
-                // Bluetooth connection as failed or leave the user guessing.
-                saveWarning = " The connection is active, but automatic reconnect could not be saved.";
-                System.Diagnostics.Debug.WriteLine($"Saving the selected wearable failed: {saveException}");
-            }
-
-            DiscoveryHint.Text = $"Connected to {selected.Name} over BLE.{saveWarning} {protocolReport}";
+            DiscoveryHint.Text = $"Connected to {selected.Name} over BLE. {protocolReport}";
         }
         catch (Exception ex)
         {
             _connectedDeviceId = null;
             _connectionLostDeviceId = selected.Id;
-            _isRefreshingDevices = true;
-            try { DevicesList.SelectedItem = null; }
-            finally { _isRefreshingDevices = false; }
-            DiscoveryHint.Text = $"Couldn't connect to {selected.Name}. No pairing or reset was attempted, so its existing phone setup remains untouched. Select it to retry. Details: {ex.Message}";
+            DiscoveryHint.Text = $"Couldn't connect to {selected.Name}. No pairing or reset was attempted, so its existing phone setup remains untouched. Click it to retry. Details: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"BLE connection error: {ex}");
         }
         finally
@@ -532,122 +502,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-
-    private async Task SavePairedDeviceAsync(WearableDevice device)
-    {
-        var folder = Path.GetDirectoryName(SavedDevicePath)!;
-        Directory.CreateDirectory(folder);
-        var json = JsonSerializer.Serialize(new SavedWearable(device.Name, _connection.ConnectedBluetoothAddress ?? device.Id, device.DeviceInformationId));
-        await File.WriteAllTextAsync(SavedDevicePath, json);
-    }
-
-    private async Task InitializeBluetoothLifecycleAsync()
-    {
-        try
-        {
-            var radios = await Radio.GetRadiosAsync();
-            var radio = radios.FirstOrDefault(item => item.Kind == RadioKind.Bluetooth);
-            if (_isClosed)
-                return;
-
-            _bluetoothRadio = radio;
-            if (_bluetoothRadio is not null)
-                _bluetoothRadio.StateChanged += BluetoothRadio_StateChanged;
-
-            if (!_isClosed && _bluetoothRadio?.State == RadioState.On)
-                await RestoreSavedDeviceAsync();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Bluetooth lifecycle initialization failed: {ex}");
-        }
-    }
-
-    private async void BluetoothRadio_StateChanged(Radio sender, object args)
-    {
-        try
-        {
-            if (_isClosed)
-                return;
-
-            if (sender.State != RadioState.On)
-            {
-                _discovery.Stop();
-                try
-                {
-                    await _connection.DisconnectAsync();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Disconnect after Bluetooth radio change failed: {ex}");
-                }
-
-                _dispatcherQueue.TryEnqueue(() =>
-                {
-                    if (_isClosed)
-                        return;
-                    ScanButton.Content = "Find devices";
-                    ScanButton.IsEnabled = true;
-                    _connectedDeviceId = null;
-                    DiscoveryHint.Text = "Bluetooth is off. Scanning stopped; your saved wearable will be retried when Bluetooth is on.";
-                });
-                return;
-            }
-
-            await Task.Delay(1200);
-            if (!_isClosed && sender.State == RadioState.On)
-                await RestoreSavedDeviceAsync();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Bluetooth radio state handler failed: {ex}");
-        }
-    }
-
-    private async Task RestoreSavedDeviceAsync()
-    {
-        if (_isRestoringConnection || _connection.IsConnected)
-            return;
-        _isRestoringConnection = true;
-        try
-        {
-            if (!File.Exists(SavedDevicePath))
-                return;
-
-            var saved = JsonSerializer.Deserialize<SavedWearable>(await File.ReadAllTextAsync(SavedDevicePath));
-            if (saved is null || string.IsNullOrWhiteSpace(saved.Id))
-                return;
-
-            _dispatcherQueue.TryEnqueue(() =>
-            {
-                if (!_isClosed)
-                    DiscoveryHint.Text = $"Reconnecting to {saved.Name}…";
-            });
-            await _connection.ConnectAndInspectAsync(saved.Id, saved.DeviceInformationId);
-            _connectedDeviceId = _connection.ConnectedBluetoothAddress ?? saved.Id;
-            _connectionLostDeviceId = null;
-            _dispatcherQueue.TryEnqueue(() =>
-            {
-                if (!_isClosed)
-                    DiscoveryHint.Text = $"Connected to saved wearable {saved.Name}.";
-            });
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Saved wearable reconnect failed: {ex}");
-            _dispatcherQueue.TryEnqueue(() =>
-            {
-                if (!_isClosed)
-                    DiscoveryHint.Text = "Saved wearable is not reachable yet. It will be retried when Bluetooth is turned on again.";
-            });
-        }
-        finally
-        {
-            _isRestoringConnection = false;
-        }
-    }
-
-    private sealed record SavedWearable(string Name, string Id, string? DeviceInformationId = null);
 
     private void Connection_ConnectionStateChanged(string address, bool connected)
     {
@@ -674,7 +528,7 @@ public sealed partial class MainWindow : Window
                 try { DevicesList.SelectedItem = null; }
                 finally { _isRefreshingDevices = false; }
                 var name = _devices.GetValueOrDefault(address)?.Name ?? "your wearable";
-                DiscoveryHint.Text = $"Connection to {name} was lost. Select it to reconnect.";
+                DiscoveryHint.Text = $"Connection to {name} was lost. Click it to reconnect.";
             }
         });
     }
@@ -711,13 +565,11 @@ public sealed partial class MainWindow : Window
                 ? $"Connected to {_devices.GetValueOrDefault(_connectedDeviceId)?.Name ?? "your wearable"}."
                 : _connectingDeviceId is not null
                     ? $"Connecting to {_devices.GetValueOrDefault(_connectingDeviceId)?.Name ?? "your wearable"}…"
-                    : _isRestoringConnection
-                        ? "Reconnecting to your saved wearable…"
-                        : _connectionLostDeviceId is not null
+                    : _connectionLostDeviceId is not null
                             ? $"Connection to {_devices.GetValueOrDefault(_connectionLostDeviceId)?.Name ?? "your saved wearable"} isn't active. Select it to try again."
                             : _devices.Count == 0
                                 ? "Choose Find devices to look for nearby Samsung wearables."
-                                : $"Found {_devices.Count} likely Samsung wearable(s). Select a device to connect.";
+                                : $"Found {_devices.Count} likely Samsung wearable(s). Click a device to connect.";
         });
     }
 }
